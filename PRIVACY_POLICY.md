@@ -1,120 +1,164 @@
-# Floosy Privacy Policy | سياسة الخصوصية لتطبيق فلوسي
+# GoushFi Privacy Policy | سياسة الخصوصية لتطبيق GoushFi
 
-**Last updated:** April 6, 2026  
-**آخر تحديث:** 6 أبريل 2026
+**Last updated:** May 19, 2026  
+**آخر تحديث:** 19 مايو 2026
 
-## 1) Who we are | من نحن
-Floosy is a personal finance app for account tracking, savings, projects, and documents.
+GoushFi is a personal finance application for tracking accounts, income, expenses, savings, projects, recurring commitments, invoices, taxes, and documents. This policy explains what information the app handles and how users can control it.
 
-فلوسي هو تطبيق إدارة مالية شخصية لمتابعة الحساب، التوفير، المشاريع، والمستندات.
+GoushFi هو تطبيق إدارة مالية شخصية لمتابعة الحسابات، الدخل، المصاريف، التوفير، المشاريع، الالتزامات المتكررة، الفواتير، الضرائب، والمستندات. توضح هذه السياسة البيانات التي يتعامل معها التطبيق وطريقة تحكم المستخدم بها.
 
-## 2) Data we process | البيانات التي نعالجها
-### You provide | بيانات تدخلها أنت
-- Profile info (name, language, currency, optional logo)
-- Transactions, savings entries, projects, recurring items, and documents
-- Account email/password only when you choose cloud sync (Supabase)
+## 1) Information you provide | البيانات التي تدخلها
 
-- معلومات الملف الشخصي (الاسم، اللغة، العملة، الشعار الاختياري)
-- المعاملات، حركات التوفير، المشاريع، الالتزامات المتكررة، والمستندات
-- الإيميل/كلمة المرور فقط عند تفعيل المزامنة السحابية (Supabase)
+Depending on how you use the app, you may enter or upload:
 
-### Not collected by default | غير مجمعة افتراضيًا
-- No background tracking
-- No ads profile tracking
-- No payment card data inside the app at this stage
+- Profile settings such as name, preferred language, currency, and optional logo.
+- Financial records such as transactions, income, expenses, savings entries, projects, recurring items, invoices, tax-related records, and notes.
+- Documents, attachments, proof images, PDFs, filenames, dates, fees, and renewal/reminder details.
+- Account email and password only when you choose to create or sign in to a cloud sync account.
+- JSON backup files when you choose to import or restore data.
 
-- لا يوجد تتبع في الخلفية
-- لا يوجد تتبع إعلاني
-- لا يتم جمع بيانات بطاقات الدفع داخل التطبيق حاليًا
+حسب استخدامك للتطبيق، قد تدخل أو ترفع:
 
-## 3) Local-first behavior | آلية العمل المحلية أولًا
-By default, Floosy stores data locally on your device.
-Cloud sync is optional and can be turned off in Settings.
-During beta, we recommend keeping regular JSON backup exports of important data. If you want data to remain available across sessions and devices, enable cloud sync and sign in.
+- إعدادات الملف مثل الاسم، اللغة المفضلة، العملة، والشعار الاختياري.
+- سجلات مالية مثل المعاملات، الدخل، المصاريف، التوفير، المشاريع، الالتزامات المتكررة، الفواتير، السجلات الضريبية، والملاحظات.
+- مستندات، مرفقات، صور إثبات، ملفات PDF، أسماء ملفات، تواريخ، رسوم، وتفاصيل تجديد أو تذكير.
+- الإيميل وكلمة المرور فقط عند اختيار إنشاء حساب أو تسجيل الدخول للمزامنة السحابية.
+- ملفات نسخ احتياطي JSON عند اختيار الاستيراد أو الاستعادة.
 
-افتراضيًا، فلوسي يحفظ البيانات محليًا على جهازك.
-المزامنة السحابية اختيارية ويمكن إيقافها من الإعدادات.
-خلال مرحلة التجربة، نوصي بالاحتفاظ بنسخ تصدير احتياطية منتظمة بصيغة JSON للبيانات المهمة. وإذا كان المطلوب هو استمرار توفر البيانات عبر الجلسات والأجهزة، فيرجى تفعيل المزامنة السحابية وتسجيل الدخول.
+## 2) Local-first storage | التخزين المحلي أولًا
 
-## 4) Cloud sync (optional) | المزامنة السحابية (اختيارية)
-If you enable cloud sync, your app data is stored in your own cloud record through the Floosy Supabase setup and linked to your account.
-Access control rules are applied so each user can access only their own record.
-If you start with local use first, you can later sign in and use the in-app cloud save option to upload your current app data.
-If you disable cloud sync later, syncing stops, but existing cloud data is not deleted automatically unless you delete it from inside the app.
+By default, GoushFi is designed to work local-first. Your data can be saved on the device or browser session you are using, depending on the environment and your settings.
 
-عند تفعيل المزامنة السحابية، يتم حفظ بيانات التطبيق في سجل سحابي خاص بك عبر إعداد Supabase الخاص بـ Floosy ويرتبط بحسابك.
-يتم تطبيق صلاحيات وصول بحيث يصل كل مستخدم إلى سجله فقط.
-إذا بدأ الاستخدام محليًا أولًا، فيمكن لاحقًا تسجيل الدخول واستخدام خيار الحفظ السحابي داخل التطبيق لرفع بيانات التطبيق الحالية.
-إذا تم إيقاف المزامنة السحابية لاحقًا، تتوقف المزامنة، لكن لا يتم حذف البيانات السحابية الموجودة تلقائيًا إلا إذا تم حذفها من داخل التطبيق.
+You can turn device saving on or off in Settings. If device saving is turned off and cloud sync is not enabled, data may not remain available after the session ends.
 
-## 5) How data is used | كيف نستخدم البيانات
-- Show your balances, summaries, and analytics
-- Sync your data across sessions/devices (if enabled)
-- Improve reliability and app quality
+افتراضيًا، صُمم GoushFi ليعمل محليًا أولًا. يمكن حفظ بياناتك على الجهاز أو جلسة المتصفح المستخدمة حسب البيئة والإعدادات.
 
-- عرض الأرصدة والملخصات والتحليل المالي
-- مزامنة البيانات بين الجلسات/الأجهزة (إذا كانت مفعلة)
-- تحسين استقرار وجودة التطبيق
+يمكنك تشغيل أو إيقاف حفظ الجهاز من الإعدادات. إذا تم إيقاف حفظ الجهاز ولم تكن المزامنة السحابية مفعلة، قد لا تبقى البيانات متاحة بعد انتهاء الجلسة.
 
-## 6) Data sharing | مشاركة البيانات
-We do not sell personal data.
-Data is not shared with third parties for advertising.
-Infrastructure providers may process data only to operate the service.
-Current beta service providers may include Supabase for authentication/database and Streamlit Community Cloud for app hosting.
+## 3) Optional cloud sync | المزامنة السحابية الاختيارية
 
-لا نقوم ببيع البيانات الشخصية.
-لا تتم مشاركة البيانات مع أطراف ثالثة لأغراض إعلانية.
-قد تتم المعالجة عبر مزودي البنية التحتية فقط لتشغيل الخدمة.
-قد يشمل مزودو الخدمة في النسخة التجريبية الحالية Supabase للمصادقة/قاعدة البيانات وStreamlit Community Cloud لاستضافة التطبيق.
+Cloud sync is optional. If you enable it and sign in, GoushFi stores a copy of your app data in Supabase so you can restore or continue your data across sessions or devices.
 
-## 7) Data retention | مدة الاحتفاظ بالبيانات
-- Local data remains on your device until you delete it.
-- Cloud data remains until you delete it or delete your account.
+Cloud sync may include the app data you choose to save, including financial records, documents, attachments, settings, and backup-related data. Access controls are intended to limit each signed-in user to their own cloud record.
 
-- البيانات المحلية تبقى على جهازك حتى تقوم بحذفها.
-- البيانات السحابية تبقى حتى تقوم بحذفها أو حذف الحساب.
+You can disable cloud sync, sign out, delete cloud data, or delete your cloud account from inside the app where those controls are available.
 
-## 8) Your controls | تحكم المستخدم
-Inside the app, you can:
-- Disable cloud sync
-- Sign out from cloud
-- Delete cloud data
-- Delete your account (cloud)
-- Delete local device data
-- Export a JSON backup copy of your data from Settings
-- Restore data from a JSON backup file from Settings
+المزامنة السحابية اختيارية. عند تفعيلها وتسجيل الدخول، يحفظ GoushFi نسخة من بيانات التطبيق في Supabase حتى تتمكن من الاستعادة أو متابعة بياناتك عبر الجلسات أو الأجهزة.
 
-داخل التطبيق، يمكنك:
-- إيقاف المزامنة السحابية
-- تسجيل خروج من السحابة
-- حذف البيانات السحابية
-- حذف الحساب (السحابة)
-- حذف بيانات الجهاز المحلية
-- تصدير نسخة احتياطية بصيغة JSON من الإعدادات
-- استرجاع البيانات من ملف JSON احتياطي من الإعدادات
+قد تشمل المزامنة السحابية بيانات التطبيق التي تختار حفظها، بما في ذلك السجلات المالية، المستندات، المرفقات، الإعدادات، وبيانات النسخ الاحتياطي. تهدف صلاحيات الوصول إلى حصر بيانات كل مستخدم مسجل بحسابه فقط.
 
-## 9) Security | الحماية
-We use access controls and standard service safeguards to help protect stored data, but no online or local method is 100% secure.
-Please use a strong password, keep your device protected, and export backup copies of important data regularly during beta, especially before major changes or updates.
+يمكنك إيقاف المزامنة السحابية، تسجيل الخروج، حذف البيانات السحابية، أو حذف حساب السحابة من داخل التطبيق عند توفر هذه الخيارات.
 
-نستخدم ضوابط وصول ووسائل حماية معيارية للمساعدة في حماية البيانات المحفوظة، لكن لا توجد وسيلة محلية أو سحابية مضمونة 100%.
-يرجى استخدام كلمة مرور قوية، وحماية الجهاز، وتصدير نسخ احتياطية للبيانات المهمة بشكل منتظم خلال مرحلة التجربة، خصوصًا قبل التغييرات أو التحديثات الكبيرة.
+## 4) How information is used | كيف تُستخدم البيانات
 
-## 10) Children | الأطفال
-This app is not intended for children under 13.
+GoushFi uses your data to:
 
-هذا التطبيق غير مخصص للأطفال دون 13 سنة.
+- Show balances, summaries, dashboards, and financial analytics.
+- Calculate cash flow, savings progress, commitments, document renewals, and tax/invoice summaries.
+- Save, restore, export, and import your data when you choose those actions.
+- Sync data across sessions or devices if cloud sync is enabled.
+- Maintain app reliability, security, and basic service operation.
 
-## 11) Changes to this policy | تحديثات سياسة الخصوصية
-We may update this policy. The latest version date is shown at the top.
+يستخدم GoushFi بياناتك من أجل:
 
-قد نقوم بتحديث هذه السياسة. تاريخ آخر نسخة يظهر أعلى الصفحة.
+- عرض الأرصدة، الملخصات، لوحات التحكم، والتحليلات المالية.
+- حساب التدفق النقدي، تقدم التوفير، الالتزامات، تجديد المستندات، وملخصات الضرائب والفواتير.
+- حفظ البيانات، استعادتها، تصديرها، واستيرادها عند اختيار هذه الإجراءات.
+- مزامنة البيانات عبر الجلسات أو الأجهزة عند تفعيل المزامنة السحابية.
+- الحفاظ على استقرار التطبيق، الأمان، وتشغيل الخدمة الأساسي.
 
-## 12) Contact | التواصل
-For privacy questions, contact:
-- During the current beta, please contact the Floosy app owner through the same channel you received the beta link from.
-- A dedicated support email should be added before wider public release.
+## 5) Financial analyzer | المحلل المالي
 
-للاستفسارات المتعلقة بالخصوصية خلال مرحلة التجربة الحالية:
-- يرجى التواصل مع صاحب تطبيق Floosy عبر نفس القناة التي تم من خلالها إرسال رابط النسخة التجريبية.
-- يجب إضافة بريد دعم مخصص قبل الإطلاق الأوسع للجمهور.
+The financial analyzer uses the information already stored in your app to generate summaries, projections, and practical insights. It is designed as an in-app analysis feature and does not sell or share your financial data for advertising.
+
+يستخدم المحلل المالي المعلومات الموجودة داخل التطبيق لإنشاء ملخصات، توقعات، وملاحظات عملية. وهو مصمم كميزة تحليل داخل التطبيق ولا يبيع أو يشارك بياناتك المالية لأغراض إعلانية.
+
+## 6) Service providers | مزودو الخدمة
+
+GoushFi may use service providers only to operate the app:
+
+- Supabase for optional authentication and cloud database storage.
+- Streamlit Community Cloud or another hosting provider to deliver the web app experience.
+- Apple services for app distribution, installation, and platform-level operation on iOS.
+
+These providers may process technical data such as IP address, browser/device information, logs, and request metadata as needed to provide, secure, and maintain the service.
+
+قد يستخدم GoushFi مزودي خدمة فقط لتشغيل التطبيق:
+
+- Supabase للمصادقة الاختيارية وتخزين قاعدة بيانات السحابة.
+- Streamlit Community Cloud أو مزود استضافة آخر لتقديم تجربة تطبيق الويب.
+- خدمات Apple لتوزيع التطبيق وتثبيته وتشغيله على منصة iOS.
+
+قد يعالج هؤلاء المزودون بيانات تقنية مثل عنوان IP، معلومات المتصفح/الجهاز، السجلات، وبيانات الطلبات حسب الحاجة لتقديم الخدمة وتأمينها وصيانتها.
+
+## 7) Data sharing and advertising | مشاركة البيانات والإعلانات
+
+GoushFi does not sell personal data. GoushFi does not use your financial data for advertising profiles, and the app does not include third-party advertising trackers.
+
+GoushFi لا يبيع البيانات الشخصية. ولا يستخدم GoushFi بياناتك المالية لإنشاء ملفات إعلانية، ولا يحتوي التطبيق على متتبعات إعلانية لطرف ثالث.
+
+## 8) Data retention | مدة الاحتفاظ بالبيانات
+
+- Local data remains on your device or browser storage until you delete it, turn off device saving, clear browser/app data, uninstall the app, or reset the device environment.
+- Cloud data remains until you delete cloud data or delete your cloud account.
+- Exported JSON backups remain wherever you save or share them and are your responsibility to protect.
+
+- تبقى البيانات المحلية على جهازك أو تخزين المتصفح حتى تقوم بحذفها، أو إيقاف حفظ الجهاز، أو مسح بيانات المتصفح/التطبيق، أو حذف التطبيق، أو إعادة ضبط بيئة الجهاز.
+- تبقى البيانات السحابية حتى تقوم بحذف بيانات السحابة أو حذف حساب السحابة.
+- تبقى نسخ JSON المصدّرة في المكان الذي تحفظها أو تشاركها فيه، وتقع مسؤولية حمايتها عليك.
+
+## 9) Your choices and controls | خياراتك وتحكمك
+
+Inside the app, you may be able to:
+
+- Turn device saving on or off.
+- Turn cloud sync on or off.
+- Sign in or sign out from cloud sync.
+- Upload to cloud or restore from cloud.
+- Delete cloud data.
+- Delete your cloud account.
+- Delete local device data.
+- Export a JSON backup.
+- Restore from a JSON backup.
+- Download uploaded attachments when available.
+
+داخل التطبيق، قد تتمكن من:
+
+- تشغيل أو إيقاف حفظ الجهاز.
+- تشغيل أو إيقاف المزامنة السحابية.
+- تسجيل الدخول أو الخروج من المزامنة السحابية.
+- الرفع إلى السحابة أو الاستعادة من السحابة.
+- حذف البيانات السحابية.
+- حذف حساب السحابة.
+- حذف بيانات الجهاز المحلية.
+- تصدير نسخة احتياطية JSON.
+- الاستعادة من نسخة احتياطية JSON.
+- تنزيل المرفقات المرفوعة عند توفرها.
+
+## 10) Security | الحماية
+
+We use reasonable access controls and service safeguards to help protect stored data. However, no local, web, or cloud system is guaranteed to be 100% secure.
+
+Please use a strong password, protect your device, avoid sharing backup files publicly, and keep backup copies of important data in a safe location.
+
+نستخدم ضوابط وصول ووسائل حماية معقولة للمساعدة في حماية البيانات المحفوظة. ومع ذلك، لا توجد أي وسيلة محلية أو ويب أو سحابية مضمونة 100%.
+
+يرجى استخدام كلمة مرور قوية، حماية جهازك، عدم مشاركة ملفات النسخ الاحتياطي علنًا، والاحتفاظ بنسخ احتياطية للبيانات المهمة في مكان آمن.
+
+## 11) Children | الأطفال
+
+GoushFi is not intended for children under 13.
+
+GoushFi غير مخصص للأطفال دون 13 سنة.
+
+## 12) Changes to this policy | تحديثات سياسة الخصوصية
+
+We may update this policy from time to time. The latest version date appears at the top of this page.
+
+قد نقوم بتحديث هذه السياسة من وقت لآخر. يظهر تاريخ آخر نسخة في أعلى هذه الصفحة.
+
+## 13) Contact | التواصل
+
+For privacy questions, contact: **s.al.zemami.90@gmail.com**
+
+للاستفسارات المتعلقة بالخصوصية، تواصل عبر: **s.al.zemami.90@gmail.com**
