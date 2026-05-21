@@ -1,6 +1,6 @@
-# Floosy
+# GoushFi
 
-Floosy is a bilingual personal finance beta built with Streamlit. It helps users track money, projects, invoices, documents, savings, tax readiness, and optional cloud sync in one practical workflow.
+GoushFi is a bilingual personal finance beta built with Streamlit. It helps users track money, projects, invoices, documents, savings, tax readiness, and optional cloud sync in one practical workflow.
 
 The goal of this project is to turn everyday finance into a clearer system: less scattered data, more visibility, and better decisions.
 
@@ -16,7 +16,7 @@ The goal of this project is to turn everyday finance into a clearer system: less
 
 ## Why this project matters
 
-Floosy is more than a UI experiment. It includes product flows, data models, service logic, persistence, testing, deployment planning, and cloud-sync safety checks. It is built as a real beta product, not just a tutorial app.
+GoushFi is more than a UI experiment. It includes product flows, data models, service logic, persistence, testing, deployment planning, and cloud-sync safety checks. It is built as a real beta product, not just a tutorial app.
 
 ## Tech stack
 
@@ -122,4 +122,3 @@ Next improvements:
 - Add a hosted demo link when deployment is ready
 - Continue polishing onboarding and cloud-sync flows
 - Package the strongest product story for the GitHub profile
-
