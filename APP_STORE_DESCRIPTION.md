@@ -100,4 +100,4 @@ GoushFi — A comprehensive personal finance app that helps you organize your fi
 4+ (No objectionable content)
 
 ## Privacy URL
-https://github.com/salzemami90-arch/floosy-app/blob/main/PRIVACY_POLICY.md
+https://github.com/salzemami90-arch/GoushFi/blob/main/PRIVACY_POLICY.md
