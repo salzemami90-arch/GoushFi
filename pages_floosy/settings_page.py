@@ -882,15 +882,16 @@ def render():
                             "Cloud is not available in this environment right now.",
                         )
                     )
-                    with st.expander(t("إعداد متقدم للمطورين", "Advanced setup for developers"), expanded=False):
-                        st.caption(
-                            t(
-                                "لبيئة النشر فقط: أضف مفاتيح ربط السحابة في secrets أو متغيرات البيئة.",
-                                "Deployment only: add cloud connection keys in secrets or environment variables.",
-                            )
+                    st.divider()
+                    st.caption(f"**{t('إعداد متقدم للمطورين', 'Advanced setup for developers')}**")
+                    st.caption(
+                        t(
+                            "لبيئة النشر فقط: أضف مفاتيح ربط السحابة في secrets أو متغيرات البيئة.",
+                            "Deployment only: add cloud connection keys in secrets or environment variables.",
                         )
-                        st.caption("Required keys: SUPABASE_URL and SUPABASE_ANON_KEY")
-                        _render_cloud_sql_setup(t)
+                    )
+                    st.caption("Required keys: SUPABASE_URL and SUPABASE_ANON_KEY")
+                    _render_cloud_sql_setup(t)
                 else:
                     logged_in = bool(cloud_auth.get("logged_in")) and bool(cloud_auth.get("access_token"))
 
@@ -1046,71 +1047,72 @@ def render():
                             )
                         )
 
-                        with st.expander(t("منطقة حساسة", "Danger Zone"), expanded=False):
-                            st.warning(
-                                t(
-                                    "حذف الحساب بالكامل نهائي ويشمل حساب السحابة وبياناته.",
-                                    "Permanent account deletion removes your cloud account and cloud data.",
-                                )
+                        st.divider()
+                        st.caption(f"⚠️ **{t('منطقة حساسة', 'Danger Zone')}**")
+                        st.warning(
+                            t(
+                                "حذف الحساب بالكامل نهائي ويشمل حساب السحابة وبياناته.",
+                                "Permanent account deletion removes your cloud account and cloud data.",
                             )
+                        )
 
-                            delete_account_confirm = st.checkbox(
-                                t("أفهم أن حذف الحساب نهائي", "I understand account deletion is permanent"),
-                                key="cloud_delete_account_confirm",
+                        delete_account_confirm = st.checkbox(
+                            t("أفهم أن حذف الحساب نهائي", "I understand account deletion is permanent"),
+                            key="cloud_delete_account_confirm",
+                        )
+
+                        if st.button(
+                            t("حذف الحساب بالكامل", "Delete Account Permanently"),
+                            use_container_width=True,
+                            key="cloud_delete_account_btn",
+                            disabled=not delete_account_confirm,
+                        ):
+                            cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
+                            if refresh_error:
+                                cloud_error = _cloud_error_text(refresh_error, t)
+                                st.error(t(f"تعذر تحديث الجلسة: {cloud_error}", f"Could not refresh session: {cloud_error}"))
+                                st.stop()
+                            data_delete_res = client.delete_user_data(
+                                cloud_auth.get("user_id", ""),
+                                cloud_auth.get("access_token", ""),
                             )
+                            account_delete_res = client.delete_current_user(cloud_auth.get("access_token", ""))
 
-                            if st.button(
-                                t("حذف الحساب بالكامل", "Delete Account Permanently"),
-                                use_container_width=True,
-                                key="cloud_delete_account_btn",
-                                disabled=not delete_account_confirm,
-                            ):
-                                cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
-                                if refresh_error:
-                                    cloud_error = _cloud_error_text(refresh_error, t)
-                                    st.error(t(f"تعذر تحديث الجلسة: {cloud_error}", f"Could not refresh session: {cloud_error}"))
-                                    st.stop()
-                                data_delete_res = client.delete_user_data(
-                                    cloud_auth.get("user_id", ""),
-                                    cloud_auth.get("access_token", ""),
+                            if account_delete_res.get("ok"):
+                                _set_cloud_auth(False)
+                                st.session_state["_cloud_remember_login"] = False
+                                clear_cloud_auth_cookie()
+                                st.session_state["_cloud_browser_storage_clear_requested"] = True
+                                _set_scope_owner("", "")
+                                st.session_state["_cloud_last_snapshot"] = ""
+                                st.session_state["_cloud_last_pull_user"] = ""
+                                clear_cloud_sync_guard(st.session_state)
+                                st.success(
+                                    t(
+                                        "تم حذف الحساب السحابي بالكامل.",
+                                        "Cloud account deleted permanently.",
+                                    )
                                 )
-                                account_delete_res = client.delete_current_user(cloud_auth.get("access_token", ""))
+                                st.rerun()
 
-                                if account_delete_res.get("ok"):
-                                    _set_cloud_auth(False)
-                                    st.session_state["_cloud_remember_login"] = False
-                                    clear_cloud_auth_cookie()
-                                    st.session_state["_cloud_browser_storage_clear_requested"] = True
-                                    _set_scope_owner("", "")
-                                    st.session_state["_cloud_last_snapshot"] = ""
-                                    st.session_state["_cloud_last_pull_user"] = ""
-                                    clear_cloud_sync_guard(st.session_state)
-                                    st.success(
-                                        t(
-                                            "تم حذف الحساب السحابي بالكامل.",
-                                            "Cloud account deleted permanently.",
-                                        )
+                            account_error = str(account_delete_res.get("error", ""))
+                            data_error = str(data_delete_res.get("error", ""))
+                            account_error_display = _cloud_error_text(account_error, t)
+                            data_error_display = _cloud_error_text(data_error, t)
+                            if data_delete_res.get("ok"):
+                                st.warning(
+                                    t(
+                                        f"تم حذف البيانات السحابية لكن حذف الحساب فشل: {account_error_display}",
+                                        f"Cloud data deleted, but account deletion failed: {account_error_display}",
                                     )
-                                    st.rerun()
-
-                                account_error = str(account_delete_res.get("error", ""))
-                                data_error = str(data_delete_res.get("error", ""))
-                                account_error_display = _cloud_error_text(account_error, t)
-                                data_error_display = _cloud_error_text(data_error, t)
-                                if data_delete_res.get("ok"):
-                                    st.warning(
-                                        t(
-                                            f"تم حذف البيانات السحابية لكن حذف الحساب فشل: {account_error_display}",
-                                            f"Cloud data deleted, but account deletion failed: {account_error_display}",
-                                        )
+                                )
+                            else:
+                                st.error(
+                                    t(
+                                        f"تعذر حذف الحساب: {account_error_display} | وتعذر حذف البيانات: {data_error_display}",
+                                        f"Account deletion failed: {account_error_display} | Data deletion failed: {data_error_display}",
                                     )
-                                else:
-                                    st.error(
-                                        t(
-                                            f"تعذر حذف الحساب: {account_error_display} | وتعذر حذف البيانات: {data_error_display}",
-                                            f"Account deletion failed: {account_error_display} | Data deletion failed: {data_error_display}",
-                                        )
-                                    )
+                                )
 
                     else:
                         mode = st.selectbox(
