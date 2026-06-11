@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.env
+.streamlit/secrets.toml
+e2e_tests/
+tests/
+*.md
+!PRIVACY_POLICY.md
+requirements-dev.txt
