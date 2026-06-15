@@ -19,6 +19,38 @@ class SupabaseSyncClientConfigTests(unittest.TestCase):
         self.assertEqual(client.anon_key, "anon-key")
         self.assertEqual(client.table_name, "custom_table")
 
+    def test_from_runtime_reads_nested_supabase_section(self):
+        client = SupabaseSyncClient.from_runtime(
+            {
+                "supabase": {
+                    "url": "https://nested.supabase.co",
+                    "anon_key": "nested-anon-key",
+                    "table_name": "nested_table",
+                }
+            }
+        )
+
+        self.assertEqual(client.supabase_url, "https://nested.supabase.co")
+        self.assertEqual(client.anon_key, "nested-anon-key")
+        self.assertEqual(client.table_name, "nested_table")
+
+    def test_from_runtime_reads_connections_supabase_section(self):
+        client = SupabaseSyncClient.from_runtime(
+            {
+                "connections": {
+                    "supabase": {
+                        "url": "https://connection.supabase.co",
+                        "api_key": "connection-anon-key",
+                        "data_table": "connection_table",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(client.supabase_url, "https://connection.supabase.co")
+        self.assertEqual(client.anon_key, "connection-anon-key")
+        self.assertEqual(client.table_name, "connection_table")
+
     def test_from_runtime_falls_back_to_environment(self):
         with patch.dict(
             os.environ,

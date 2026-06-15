@@ -457,7 +457,6 @@ def _apply_language_direction_theme() -> None:
 
         .stTextInput input,
         .stTextArea textarea,
-        .stNumberInput input,
         .stDateInput input,
         .stSelectbox [data-baseweb="select"] input,
         .stSelectbox [data-baseweb="select"] > div,
@@ -465,6 +464,16 @@ def _apply_language_direction_theme() -> None:
         .stMultiSelect [data-baseweb="select"] > div {{
             direction: {direction};
             text-align: {align};
+        }}
+
+        .stNumberInput input {{
+            direction: ltr;
+            text-align: {align};
+        }}
+
+        div[data-testid="stDataFrame"],
+        div[data-testid="stDataEditor"] {{
+            direction: ltr;
         }}
 
         div[data-testid="stMetric"] {{

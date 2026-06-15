@@ -8,6 +8,68 @@ from urllib.parse import quote
 import requests
 
 
+def _runtime_value(source: Any, *keys: str) -> str:
+    if source is None:
+        return ""
+
+    for key in keys:
+        value = None
+        try:
+            if hasattr(source, "get"):
+                value = source.get(key, None)
+        except Exception:
+            value = None
+
+        if value is None:
+            try:
+                value = source[key]
+            except Exception:
+                value = None
+
+        if value is None:
+            try:
+                value = getattr(source, key)
+            except Exception:
+                value = None
+
+        if value is not None:
+            clean_value = str(value or "").strip()
+            if clean_value:
+                return clean_value
+
+    return ""
+
+
+def _runtime_section(source: Any, *keys: str) -> Any:
+    if source is None:
+        return None
+
+    for key in keys:
+        value = None
+        try:
+            if hasattr(source, "get"):
+                value = source.get(key, None)
+        except Exception:
+            value = None
+
+        if value is None:
+            try:
+                value = source[key]
+            except Exception:
+                value = None
+
+        if value is None:
+            try:
+                value = getattr(source, key)
+            except Exception:
+                value = None
+
+        if value is not None:
+            return value
+
+    return None
+
+
 class SupabaseSyncClient:
     def __init__(self, supabase_url: str, anon_key: str, table_name: str = "user_app_data", timeout_sec: int = 15):
         self.supabase_url = (supabase_url or "").strip().rstrip("/")
@@ -22,14 +84,43 @@ class SupabaseSyncClient:
         secret_table_name = ""
 
         if secrets is not None:
-            try:
-                secret_url = str(secrets.get("SUPABASE_URL", "") or "")
-                secret_key = str(secrets.get("SUPABASE_ANON_KEY", "") or "")
-                secret_table_name = str(secrets.get("SUPABASE_DATA_TABLE", "") or "")
-            except Exception:
-                secret_url = ""
-                secret_key = ""
-                secret_table_name = ""
+            secret_sources = [secrets]
+            supabase_section = _runtime_section(secrets, "supabase", "SUPABASE")
+            cloud_section = _runtime_section(secrets, "cloud", "CLOUD")
+            connections_section = _runtime_section(secrets, "connections", "CONNECTIONS")
+            connection_supabase_section = _runtime_section(
+                connections_section, "supabase", "SUPABASE"
+            )
+            for source in [supabase_section, cloud_section, connection_supabase_section]:
+                if source is not None:
+                    secret_sources.append(source)
+
+            for source in secret_sources:
+                if not secret_url:
+                    secret_url = _runtime_value(
+                        source,
+                        "SUPABASE_URL",
+                        "supabase_url",
+                        "url",
+                        "project_url",
+                    )
+                if not secret_key:
+                    secret_key = _runtime_value(
+                        source,
+                        "SUPABASE_ANON_KEY",
+                        "supabase_anon_key",
+                        "anon_key",
+                        "api_key",
+                    )
+                if not secret_table_name:
+                    secret_table_name = _runtime_value(
+                        source,
+                        "SUPABASE_DATA_TABLE",
+                        "supabase_data_table",
+                        "data_table",
+                        "table_name",
+                        "table",
+                    )
 
         url = secret_url or os.getenv("SUPABASE_URL", "")
         key = secret_key or os.getenv("SUPABASE_ANON_KEY", "")

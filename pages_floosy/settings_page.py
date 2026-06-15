@@ -7,6 +7,7 @@ import streamlit as st
 from config_floosy import (
     CURRENCY_OPTIONS,
     PLAN_DEFINITIONS,
+    _is_shared_hosted_url,
     _local_persistence_enabled,
     delete_local_persistent_copy,
     export_app_state_payload,
@@ -118,6 +119,63 @@ def _mark_cloud_sync_now() -> None:
     st.session_state["settings"] = settings
 
 
+def _cloud_remember_reload_after_write() -> bool:
+    if bool(_local_persistence_enabled()):
+        return False
+
+    runtime_url = ""
+    try:
+        context = getattr(st, "context", None)
+    except Exception:
+        context = None
+
+    if context is not None:
+        try:
+            runtime_url = str(getattr(context, "url", "") or "")
+        except Exception:
+            runtime_url = ""
+
+        if not runtime_url:
+            try:
+                headers = getattr(context, "headers", {}) or {}
+                if hasattr(headers, "get"):
+                    host = str(headers.get("host") or headers.get("Host") or "").strip()
+                elif isinstance(headers, dict):
+                    host = str(headers.get("host") or headers.get("Host") or "").strip()
+                else:
+                    host = ""
+                if host:
+                    scheme = "http" if host.startswith(("localhost", "127.0.0.1", "0.0.0.0")) else "https"
+                    runtime_url = f"{scheme}://{host}"
+            except Exception:
+                runtime_url = ""
+
+    return _is_shared_hosted_url(runtime_url)
+
+
+def _create_initial_cloud_copy_after_sign_up(
+    client: SupabaseSyncClient,
+    user_id: str,
+    access_token: str,
+    email: str,
+) -> tuple[bool, str]:
+    payload = export_app_state_payload()
+    push = client.upsert_user_data(user_id, access_token, payload)
+    if not push.get("ok"):
+        st.session_state["_cloud_sync_last_error"] = str(push.get("error") or "sync_push_failed")
+        pause_cloud_auto_sync(st.session_state, user_id, reason="initial_cloud_copy_failed_after_sign_up")
+        save_persistent_state()
+        return False, str(push.get("error") or "sync_push_failed")
+
+    _set_scope_owner(user_id, email)
+    st.session_state["_cloud_sync_last_error"] = ""
+    mark_cloud_sync_ready(st.session_state, user_id)
+    _mark_cloud_sync_now()
+    _sync_snapshot_from_state()
+    save_persistent_state()
+    return True, ""
+
+
 def _format_cloud_sync_label(raw_value: str, empty_label: str) -> str:
     clean_value = str(raw_value or "").strip()
     if not clean_value:
@@ -187,6 +245,13 @@ def _render_cloud_sync_pause_notice(t) -> None:
             t(
                 "تم حذف النسخة السحابية، لذلك أوقفنا الرفع التلقائي مؤقتًا. إذا رغبت في إنشاء نسخة سحابية جديدة استخدم رفع للسحابة.",
                 "The cloud copy was deleted, so auto upload is paused for now. If you want to create a new cloud copy, use Upload to Cloud.",
+            )
+        )
+    elif reason == "initial_cloud_copy_failed_after_sign_up":
+        st.warning(
+            t(
+                "تم إنشاء الحساب، لكن أول مزامنة سحابية لم تكتمل. بيانات هذا الجهاز بقيت كما هي ويمكنك المحاولة مرة ثانية من رفع للسحابة.",
+                "Account created, but the first cloud sync did not complete. This device kept its data, and you can try again with Upload to Cloud.",
             )
         )
     elif reason == "token_refresh_failed":
@@ -1269,21 +1334,42 @@ def render():
                                                 _set_scope_owner(user_id, clean_email)
                                                 st.session_state["_cloud_last_pull_user"] = user_id
                                                 st.session_state["_cloud_last_snapshot"] = ""
-                                                pause_cloud_auto_sync(
-                                                    st.session_state,
-                                                    user_id,
-                                                    reason="cloud_empty_after_sign_in",
-                                                )
-                                                save_persistent_state()
-                                                post_login_message_type = "info"
-                                                post_login_message = t(
-                                                    "تم تسجيل الدخول. لا توجد بيانات محفوظة في السحابة حاليًا، وبيانات هذا الجهاز بقيت كما هي.",
-                                                    "Signed in. No cloud data exists yet, and this device kept its current local data.",
-                                                )
-                                                post_login_caption = t(
-                                                    "إذا رغبت في إنشاء نسخة سحابية جديدة، استخدم زر رفع للسحابة.",
-                                                    "If you want to create a new cloud copy, use Upload to Cloud.",
-                                                )
+                                                if is_sign_up_mode:
+                                                    initial_sync_ok, initial_sync_error = _create_initial_cloud_copy_after_sign_up(
+                                                        client,
+                                                        user_id,
+                                                        access_token,
+                                                        clean_email,
+                                                    )
+                                                    if initial_sync_ok:
+                                                        post_login_message_type = "success"
+                                                        post_login_message = t(
+                                                            "تم إنشاء الحساب وتفعيل المزامنة السحابية.",
+                                                            "Account created and Cloud Sync is ready.",
+                                                        )
+                                                    else:
+                                                        cloud_error = _cloud_error_text(initial_sync_error, t)
+                                                        post_login_message_type = "warning"
+                                                        post_login_message = t(
+                                                            f"تم إنشاء الحساب، لكن أول مزامنة سحابية لم تكتمل: {cloud_error}",
+                                                            f"Account created, but the first cloud sync did not complete: {cloud_error}",
+                                                        )
+                                                else:
+                                                    pause_cloud_auto_sync(
+                                                        st.session_state,
+                                                        user_id,
+                                                        reason="cloud_empty_after_sign_in",
+                                                    )
+                                                    save_persistent_state()
+                                                    post_login_message_type = "info"
+                                                    post_login_message = t(
+                                                        "تم تسجيل الدخول. لا توجد بيانات محفوظة في السحابة حاليًا، وبيانات هذا الجهاز بقيت كما هي.",
+                                                        "Signed in. No cloud data exists yet, and this device kept its current local data.",
+                                                    )
+                                                    post_login_caption = t(
+                                                        "إذا رغبت في إنشاء نسخة سحابية جديدة، استخدم زر رفع للسحابة.",
+                                                        "If you want to create a new cloud copy, use Upload to Cloud.",
+                                                    )
                                             else:
                                                 pause_cloud_auto_sync(
                                                     st.session_state,
@@ -1309,7 +1395,7 @@ def render():
 
                                             if remember_login:
                                                 st.session_state["_cloud_cookie_restore_checked"] = False
-                                                reload_after_write = not bool(_local_persistence_enabled())
+                                                reload_after_write = _cloud_remember_reload_after_write()
                                                 remember_cloud_auth(
                                                     clean_email,
                                                     user_id,

@@ -1,4 +1,9 @@
 from services import cloud_state_helpers
+from services.cloud_sync_guard import (
+    PAUSE_REASON_KEY,
+    READY_USER_KEY,
+    cloud_sync_ready_for_user,
+)
 from pages_floosy import settings_page
 
 
@@ -14,6 +19,7 @@ class _FakeSt:
             },
             "_cloud_remember_login": True,
         }
+        self.context = None
 
 
 class _RefreshClient:
@@ -73,3 +79,103 @@ def test_manual_cloud_action_reports_refresh_failure(monkeypatch):
     assert cloud_auth["access_token"] == "old-access"
     assert error == "JWT expired"
     assert fake_st.session_state["_cloud_sync_last_error"] == "token_refresh_failed"
+
+
+class _InitialCloudCopyClient:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def upsert_user_data(self, user_id, access_token, payload):
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "access_token": access_token,
+                "payload": payload,
+            }
+        )
+        return self.result
+
+
+def test_initial_cloud_copy_after_sign_up_marks_sync_ready(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings"] = {"cloud_sync_enabled": True, "cloud_last_sync_at": ""}
+    fake_st.session_state["app_scope"] = {"owner_user_id": "", "owner_email": ""}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(
+        settings_page,
+        "export_app_state_payload",
+        lambda: {
+            "settings": dict(fake_st.session_state["settings"]),
+            "app_scope": dict(fake_st.session_state["app_scope"]),
+        },
+    )
+    saved = {"called": False}
+    monkeypatch.setattr(settings_page, "save_persistent_state", lambda: saved.update({"called": True}))
+    client = _InitialCloudCopyClient({"ok": True})
+
+    ok, error = settings_page._create_initial_cloud_copy_after_sign_up(
+        client,
+        "user-new",
+        "access-new",
+        "new@example.com",
+    )
+
+    assert ok is True
+    assert error == ""
+    assert saved["called"] is True
+    assert client.calls[0]["user_id"] == "user-new"
+    assert client.calls[0]["access_token"] == "access-new"
+    assert fake_st.session_state["app_scope"] == {
+        "owner_user_id": "user-new",
+        "owner_email": "new@example.com",
+    }
+    assert cloud_sync_ready_for_user(fake_st.session_state, "user-new") is True
+    assert fake_st.session_state[PAUSE_REASON_KEY] == ""
+    assert fake_st.session_state["_cloud_sync_last_error"] == ""
+    assert fake_st.session_state["settings"]["cloud_last_sync_at"]
+    assert fake_st.session_state["_cloud_last_snapshot"]
+
+
+def test_initial_cloud_copy_after_sign_up_pauses_on_push_failure(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings"] = {"cloud_sync_enabled": True, "cloud_last_sync_at": ""}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(settings_page, "export_app_state_payload", lambda: {"settings": {}})
+    saved = {"called": False}
+    monkeypatch.setattr(settings_page, "save_persistent_state", lambda: saved.update({"called": True}))
+    client = _InitialCloudCopyClient({"ok": False, "error": "insert failed"})
+
+    ok, error = settings_page._create_initial_cloud_copy_after_sign_up(
+        client,
+        "user-new",
+        "access-new",
+        "new@example.com",
+    )
+
+    assert ok is False
+    assert error == "insert failed"
+    assert saved["called"] is True
+    assert fake_st.session_state["_cloud_sync_last_error"] == "insert failed"
+    assert fake_st.session_state[READY_USER_KEY] == ""
+    assert fake_st.session_state[PAUSE_REASON_KEY] == "initial_cloud_copy_failed_after_sign_up"
+
+
+def test_remember_login_reload_is_not_for_localhost_when_persistence_is_off(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.context = type("Context", (), {"url": "http://127.0.0.1:8507"})()
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(settings_page, "_local_persistence_enabled", lambda: False)
+
+    assert settings_page._cloud_remember_reload_after_write() is False
+
+
+def test_remember_login_reload_stays_on_for_shared_hosted(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.context = type("Context", (), {"url": "https://goush-beta.streamlit.app"})()
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(settings_page, "_local_persistence_enabled", lambda: False)
+
+    assert settings_page._cloud_remember_reload_after_write() is True
