@@ -476,6 +476,27 @@ def _apply_language_direction_theme() -> None:
             direction: ltr;
         }}
 
+        div[data-testid="stForm"],
+        div[data-testid="stExpander"] details summary,
+        div[data-testid="stFileUploader"],
+        .stCheckbox label {{
+            direction: {direction};
+            text-align: {align};
+        }}
+
+        div[data-testid="stExpander"] details summary span,
+        div[data-testid="stExpander"] details summary p,
+        div[data-testid="stFileUploader"] small,
+        .stCheckbox label span {{
+            direction: {direction};
+            text-align: {align};
+        }}
+
+        .stButton button,
+        .stDownloadButton button {{
+            direction: {direction};
+        }}
+
         div[data-testid="stMetric"] {{
             text-align: {align};
         }}
