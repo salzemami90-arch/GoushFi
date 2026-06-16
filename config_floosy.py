@@ -415,6 +415,33 @@ def _apply_language_direction_theme() -> None:
         }
         """
 
+    shell_chrome_css = ""
+    if _is_native_shell_runtime():
+        shell_chrome_css = """
+        section[data-testid="stSidebar"],
+        [data-testid="stSidebar"],
+        .stSidebar,
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapsedControl"],
+        button[title="Open sidebar"],
+        button[aria-label="Open sidebar"] {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+        """
+
     st.markdown(
         f"""
         <style>
@@ -507,6 +534,7 @@ def _apply_language_direction_theme() -> None:
         }}
 
         {sidebar_side_css}
+        {shell_chrome_css}
 
         section[data-testid="stSidebar"][aria-expanded="false"],
         [data-testid="stSidebar"][aria-expanded="false"],
@@ -524,6 +552,13 @@ def _apply_language_direction_theme() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _is_native_shell_runtime() -> bool:
+    try:
+        return str(st.query_params.get("f_shell", "") or "").strip() == "1"
+    except Exception:
+        return False
 
 
 def _is_shared_hosted_url(url: str) -> bool:

@@ -11,6 +11,7 @@ from config_floosy import (
     _apply_browser_query_preferences,
     _hosted_data_warning_state,
     _is_local_runtime_url,
+    _is_native_shell_runtime,
     _is_shared_hosted_url,
     _local_persistence_enabled,
     _preferred_language_from_accept_language,
@@ -191,6 +192,18 @@ class RuntimeDetectionTests(unittest.TestCase):
             clear_regular_web_page_query_param()
 
         self.assertEqual(fake_st.query_params["page"], "tax")
+
+    def test_detects_native_shell_query_flag(self):
+        fake_st = SimpleNamespace(query_params={"f_shell": "1"})
+
+        with patch("config_floosy.st", fake_st):
+            self.assertTrue(_is_native_shell_runtime())
+
+    def test_regular_web_is_not_native_shell(self):
+        fake_st = SimpleNamespace(query_params={})
+
+        with patch("config_floosy.st", fake_st):
+            self.assertFalse(_is_native_shell_runtime())
 
 
 if __name__ == "__main__":
