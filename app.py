@@ -11,6 +11,7 @@ from config_floosy import (
     get_month_selection,
     import_app_state_payload,
     init_session_state,
+    _is_native_shell_runtime,
     save_persistent_state,
     clear_regular_web_page_query_param,
 )
@@ -351,8 +352,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    st.sidebar.title("GoushFi")
-
     page_labels = {
         "home": t("الرئيسية", "Home"),
         "account": t("الحساب", "My Account"),
@@ -393,6 +392,7 @@ def main():
     # Query params are only an entry point for shared links. Updating them after
     # every sidebar click causes an extra Streamlit rerun, which can swallow the
     # first navigation click on hosted builds.
+    query_page_applied = False
     if not st.session_state.get("_nav_initial_query_page_applied", False):
         requested_page = ""
         try:
@@ -402,6 +402,7 @@ def main():
         requested_page = legacy_map.get(requested_page, requested_page)
         if requested_page in page_labels:
             st.session_state.current_page = requested_page
+            query_page_applied = True
             clear_regular_web_page_query_param()
         st.session_state["_nav_initial_query_page_applied"] = True
 
@@ -409,24 +410,38 @@ def main():
         st.session_state.current_page = "home"
 
     page_keys = list(page_labels.keys())
-    default_index = page_keys.index(st.session_state.current_page)
-    sidebar_radio_key = "sidebar_section"
+    selected_key = st.session_state.current_page
 
-    sidebar_value = legacy_map.get(
-        str(st.session_state.get(sidebar_radio_key, "") or "").strip(),
-        str(st.session_state.get(sidebar_radio_key, "") or "").strip(),
-    )
-    if sidebar_value not in page_labels:
-        sidebar_value = st.session_state.current_page
-    st.session_state[sidebar_radio_key] = sidebar_value
+    if not _is_native_shell_runtime():
+        st.sidebar.title("GoushFi")
+        sidebar_radio_key = "sidebar_section"
+        sidebar_value = legacy_map.get(
+            str(st.session_state.get(sidebar_radio_key, "") or "").strip(),
+            str(st.session_state.get(sidebar_radio_key, "") or "").strip(),
+        )
 
-    selected_key = st.sidebar.radio(
-        t("القسم", "Section"),
-        page_keys,
-        index=default_index,
-        key=sidebar_radio_key,
-        format_func=lambda page_key: page_labels[page_key],
-    )
+        if query_page_applied:
+            st.session_state[sidebar_radio_key] = st.session_state.current_page
+        elif sidebar_value in page_labels:
+            st.session_state.current_page = sidebar_value
+        elif sidebar_radio_key in st.session_state:
+            st.session_state[sidebar_radio_key] = st.session_state.current_page
+
+        radio_kwargs = {
+            "key": sidebar_radio_key,
+            "format_func": lambda page_key: page_labels[page_key],
+        }
+        if sidebar_radio_key not in st.session_state:
+            radio_kwargs["index"] = page_keys.index(st.session_state.current_page)
+
+        selected_key = st.sidebar.radio(
+            t("القسم", "Section"),
+            page_keys,
+            **radio_kwargs,
+        )
+        selected_key = legacy_map.get(selected_key, selected_key)
+        if selected_key not in page_labels:
+            selected_key = st.session_state.current_page
 
     st.session_state.current_page = selected_key
     # اختيار الشهر/السنة (صفحات تحتاجها)
