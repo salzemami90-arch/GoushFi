@@ -221,6 +221,27 @@ def test_sync_cloud_auth_browser_storage_returns_pending_until_frontend_replies(
     assert ready is False
 
 
+def test_sync_cloud_auth_browser_storage_skips_component_in_native_shell(monkeypatch):
+    fake_st = SimpleNamespace(query_params={"f_shell": "1"})
+    monkeypatch.setattr("config_floosy.st", fake_st)
+
+    def fail_component(**kwargs):
+        raise AssertionError("native shell should not render the browser storage component")
+
+    monkeypatch.setattr("services.cloud_auth_cookie._BROWSER_STORAGE_BRIDGE", fail_component)
+
+    payload, ready = sync_cloud_auth_browser_storage(
+        {
+            "email": "user@example.com",
+            "user_id": "user-123",
+            "refresh_token": "refresh-token-xyz",
+        }
+    )
+
+    assert payload == {}
+    assert ready is True
+
+
 def test_sync_cloud_auth_browser_storage_decodes_returned_payload(monkeypatch):
     service = __import__("services.cloud_auth_cookie", fromlist=["dummy"])
     encoded = service._encode_payload(

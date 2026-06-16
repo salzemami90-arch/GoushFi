@@ -23,6 +23,15 @@ _BROWSER_STORAGE_BRIDGE = components.declare_component(
 )
 
 
+def _is_native_shell_runtime() -> bool:
+    try:
+        from config_floosy import _is_native_shell_runtime as is_native_shell_runtime
+
+        return bool(is_native_shell_runtime())
+    except Exception:
+        return False
+
+
 def _encode_payload(payload: dict) -> str:
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
@@ -174,6 +183,9 @@ def read_cloud_auth_cookie() -> dict:
 
 
 def sync_cloud_auth_browser_storage(payload: dict | None = None, *, clear: bool = False) -> tuple[dict, bool]:
+    if _is_native_shell_runtime():
+        return {}, True
+
     encoded_value = ""
     if not clear and isinstance(payload, dict):
         normalized_payload = _extract_auth_payload(payload)
