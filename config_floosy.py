@@ -813,8 +813,23 @@ header[data-testid="stHeader"] * {
     display: none !important;
 }
 
-#stDecoration {
+#stDecoration,
+[data-testid="stDecoration"],
+div[class*="stDecoration"] {
     display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
 }
 
 /* Hosted + local: trim Streamlit default top padding on the main column */

@@ -261,19 +261,19 @@ def _render_native_shell_chrome_guard() -> None:
     st.markdown(
         """
         <style id="goushfi-native-shell-chrome-guard">
-        html[data-goushfi-native-shell="1"] #stDecoration,
-        html[data-goushfi-native-shell="1"] [data-testid="stDecoration"],
-        html[data-goushfi-native-shell="1"] [data-testid="stStatusWidget"],
-        html[data-goushfi-native-shell="1"] [data-testid="stToolbar"],
-        html[data-goushfi-native-shell="1"] [data-testid="stDeployButton"],
-        html[data-goushfi-native-shell="1"] [data-testid="stAppDeployButton"],
-        html[data-goushfi-native-shell="1"] [data-testid="stMainMenu"],
-        html[data-goushfi-native-shell="1"] #MainMenu,
-        html[data-goushfi-native-shell="1"] footer,
-        html[data-goushfi-native-shell="1"] header[data-testid="stHeader"],
-        html[data-goushfi-native-shell="1"] div[class*="stDecoration"],
-        html[data-goushfi-native-shell="1"] div[class*="stStatusWidget"],
-        html[data-goushfi-native-shell="1"] div[class*="stToolbar"] {
+        #stDecoration,
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stToolbar"],
+        [data-testid="stDeployButton"],
+        [data-testid="stAppDeployButton"],
+        [data-testid="stMainMenu"],
+        #MainMenu,
+        footer,
+        header[data-testid="stHeader"],
+        div[class*="stDecoration"],
+        div[class*="stStatusWidget"],
+        div[class*="stToolbar"] {
             display: none !important;
             visibility: hidden !important;
             width: 0 !important;
