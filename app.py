@@ -254,8 +254,132 @@ def _sync_cloud_if_logged_in() -> None:
         st.session_state["_cloud_sync_last_error"] = str(push.get("error") or "sync_push_failed")
 
 
+def _render_native_shell_chrome_guard() -> None:
+    if not _is_native_shell_runtime():
+        return
+
+    st.markdown(
+        """
+        <style id="goushfi-native-shell-chrome-guard">
+        html[data-goushfi-native-shell="1"] #stDecoration,
+        html[data-goushfi-native-shell="1"] [data-testid="stDecoration"],
+        html[data-goushfi-native-shell="1"] [data-testid="stStatusWidget"],
+        html[data-goushfi-native-shell="1"] [data-testid="stToolbar"],
+        html[data-goushfi-native-shell="1"] [data-testid="stDeployButton"],
+        html[data-goushfi-native-shell="1"] [data-testid="stAppDeployButton"],
+        html[data-goushfi-native-shell="1"] [data-testid="stMainMenu"],
+        html[data-goushfi-native-shell="1"] #MainMenu,
+        html[data-goushfi-native-shell="1"] footer,
+        html[data-goushfi-native-shell="1"] header[data-testid="stHeader"],
+        html[data-goushfi-native-shell="1"] div[class*="stDecoration"],
+        html[data-goushfi-native-shell="1"] div[class*="stStatusWidget"],
+        html[data-goushfi-native-shell="1"] div[class*="stToolbar"] {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            max-width: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+        </style>
+        <script>
+        (function() {
+          const markNativeShell = () => {
+            if (document.documentElement?.getAttribute("data-goushfi-native-shell") !== "1") {
+              document.documentElement?.setAttribute("data-goushfi-native-shell", "1");
+            }
+            if (document.body?.getAttribute("data-goushfi-native-shell") !== "1") {
+              document.body?.setAttribute("data-goushfi-native-shell", "1");
+            }
+          };
+
+          const hideElement = (element) => {
+            if (!element || !element.style) return;
+            if (element.getAttribute("data-goushfi-chrome-hidden") === "1") return;
+            element.setAttribute("data-goushfi-chrome-hidden", "1");
+            element.style.setProperty("display", "none", "important");
+            element.style.setProperty("visibility", "hidden", "important");
+            element.style.setProperty("width", "0", "important");
+            element.style.setProperty("height", "0", "important");
+            element.style.setProperty("min-width", "0", "important");
+            element.style.setProperty("min-height", "0", "important");
+            element.style.setProperty("max-width", "0", "important");
+            element.style.setProperty("max-height", "0", "important");
+            element.style.setProperty("padding", "0", "important");
+            element.style.setProperty("margin", "0", "important");
+            element.style.setProperty("border", "0", "important");
+            element.style.setProperty("opacity", "0", "important");
+            element.style.setProperty("pointer-events", "none", "important");
+            element.style.setProperty("overflow", "hidden", "important");
+          };
+
+          const fixedTopChrome = (element) => {
+            try {
+              const style = window.getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              return (
+                style.position === "fixed" &&
+                rect.top <= 4 &&
+                rect.left <= 2 &&
+                rect.width >= window.innerWidth * 0.75 &&
+                rect.height > 0 &&
+                rect.height <= 8
+              );
+            } catch (error) {
+              return false;
+            }
+          };
+
+          const hideChrome = () => {
+            markNativeShell();
+            document.querySelectorAll(
+              [
+                "#stDecoration",
+                "[data-testid='stDecoration']",
+                "[data-testid='stStatusWidget']",
+                "[data-testid='stToolbar']",
+                "[data-testid='stDeployButton']",
+                "[data-testid='stAppDeployButton']",
+                "[data-testid='stMainMenu']",
+                "#MainMenu",
+                "footer",
+                "header[data-testid='stHeader']",
+                "div[class*='stDecoration']",
+                "div[class*='stStatusWidget']",
+                "div[class*='stToolbar']",
+              ].join(",")
+            ).forEach(hideElement);
+            document.querySelectorAll("body > div, body > section, body > header").forEach((element) => {
+              if (fixedTopChrome(element)) hideElement(element);
+            });
+          };
+
+          hideChrome();
+          window.addEventListener("load", hideChrome);
+          const observer = new MutationObserver(hideChrome);
+          observer.observe(document.documentElement, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+          });
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main():
     st.set_page_config(page_title="GoushFi", layout="wide")
+    _render_native_shell_chrome_guard()
 
     if not st.session_state.get("_splash_shown"):
         _splash_logo = get_builtin_logo_b64()
