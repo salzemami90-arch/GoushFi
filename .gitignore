@@ -11,6 +11,7 @@ test-results/
 
 data/floosy_data.json
 data/floosy_data.sqlite3
+data/floosy_oauth_pkce.sqlite3
 data/*.tmp
 data/*.backup-*
 data/*.sqlite3-wal

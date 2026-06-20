@@ -20,6 +20,8 @@ from services.cloud_auth_cookie import (
     clear_cloud_auth_cookie,
     read_cloud_auth_cookie,
     remember_cloud_auth,
+    render_cloud_oauth_callback_capture,
+    render_cloud_oauth_hash_capture_inline,
     sync_cloud_auth_browser_storage,
 )
 from services.cloud_state_helpers import (
@@ -35,6 +37,11 @@ from services.cloud_sync_guard import (
     should_keep_local_data_before_auto_import,
 )
 from services.i18n import make_t, get_lang_code, is_rtl as _is_rtl
+from services.oauth_pkce import (
+    forget_pkce_flow,
+    read_pkce_cookie,
+    resolve_pkce_verifier,
+)
 from services.supabase_sync import SupabaseSyncClient
 
 
@@ -45,6 +52,236 @@ def _set_cloud_snapshot_now(user_id: str = "") -> None:
         snapshot = ""
     st.session_state["_cloud_last_snapshot"] = snapshot
     st.session_state["_cloud_last_pull_user"] = str(user_id or "")
+
+
+def _apply_cloud_auth_session(
+    client: SupabaseSyncClient,
+    *,
+    email: str,
+    user_id: str,
+    access_token: str,
+    refresh_token: str,
+    reason_suffix: str,
+) -> bool:
+    clean_user_id = str(user_id or "").strip()
+    clean_email = str(email or "").strip()
+    clean_access_token = str(access_token or "").strip()
+    clean_refresh_token = str(refresh_token or "").strip()
+    if not clean_user_id or not clean_access_token:
+        return False
+
+    previous_owner = ""
+    scope = st.session_state.get("app_scope", {})
+    if isinstance(scope, dict):
+        previous_owner = str(scope.get("owner_user_id") or "")
+    if previous_owner and previous_owner != clean_user_id:
+        _clear_scoped_finance_state()
+
+    _set_cloud_auth(
+        True,
+        email=clean_email,
+        user_id=clean_user_id,
+        access_token=clean_access_token,
+        refresh_token=clean_refresh_token,
+    )
+    _set_scope_owner(clean_user_id, clean_email)
+    if isinstance(st.session_state.get("settings"), dict):
+        st.session_state.settings["cloud_sync_enabled"] = True
+    remember_cloud_auth(clean_email, clean_user_id, clean_refresh_token)
+
+    local_payload = export_app_state_payload()
+    pull = client.fetch_user_data(clean_user_id, clean_access_token)
+    remote_payload = pull.get("data") if isinstance(pull.get("data"), dict) else None
+
+    if pull.get("ok") and remote_payload is not None:
+        if should_keep_local_data_before_auto_import(local_payload, remote_payload):
+            st.session_state["_cloud_last_snapshot"] = payload_snapshot(remote_payload)
+            st.session_state["_cloud_last_pull_user"] = clean_user_id
+            pause_cloud_auto_sync(
+                st.session_state,
+                clean_user_id,
+                reason=f"local_cloud_conflict_after_{reason_suffix}",
+            )
+            save_persistent_state()
+            return True
+
+        import_app_state_payload(remote_payload)
+        _set_scope_owner(clean_user_id, clean_email)
+        _set_cloud_auth(
+            True,
+            email=clean_email,
+            user_id=clean_user_id,
+            access_token=clean_access_token,
+            refresh_token=clean_refresh_token,
+        )
+        _set_cloud_snapshot_now(clean_user_id)
+        mark_cloud_sync_ready(st.session_state, clean_user_id)
+        if isinstance(st.session_state.get("settings"), dict):
+            st.session_state.settings["cloud_sync_enabled"] = True
+            st.session_state.settings["cloud_last_sync_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        save_persistent_state()
+    elif pull.get("ok") and pull.get("data") is None:
+        st.session_state["_cloud_last_snapshot"] = ""
+        st.session_state["_cloud_last_pull_user"] = clean_user_id
+        pause_cloud_auto_sync(
+            st.session_state,
+            clean_user_id,
+            reason=f"cloud_empty_after_{reason_suffix}",
+        )
+        save_persistent_state()
+    else:
+        _set_cloud_snapshot_now(clean_user_id)
+        pause_cloud_auto_sync(
+            st.session_state,
+            clean_user_id,
+            reason=f"pull_failed_after_{reason_suffix}",
+        )
+        save_persistent_state()
+
+    return True
+
+
+def _query_param_value(name: str) -> str:
+    try:
+        value = st.query_params.get(name, "")
+    except Exception:
+        return ""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def _clear_oauth_query_params() -> None:
+    remove_keys = {
+        "code",
+        "state",
+        "error",
+        "error_code",
+        "error_description",
+        "cloud_oauth",
+        "cloud_pkce_state",
+    }
+    try:
+        remaining = {
+            key: value
+            for key, value in st.query_params.items()
+            if str(key) not in remove_keys
+        }
+        st.query_params.clear()
+        for key, value in remaining.items():
+            st.query_params[key] = value
+    except Exception:
+        pass
+
+
+def _handle_cloud_oauth_code_callback() -> None:
+    auth_code = _query_param_value("code")
+    auth_error = _query_param_value("error_description") or _query_param_value("error")
+    if not auth_code and not auth_error:
+        return
+
+    oauth_provider = _query_param_value("cloud_oauth")
+    if oauth_provider and oauth_provider != "apple":
+        return
+
+    st.session_state["current_page"] = "settings"
+    st.session_state["settings_view"] = "data"
+
+    if auth_error:
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": f"لم يكتمل تسجيل الدخول بأبل: {auth_error}",
+            "en": f"Apple sign-in did not complete: {auth_error}",
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    returned_state = _query_param_value("state")
+    redirect_state = _query_param_value("cloud_pkce_state")
+    auth_state = redirect_state or returned_state
+    pkce_cookie_flow = read_pkce_cookie()
+    code_verifier = resolve_pkce_verifier(
+        auth_state,
+        cookie_flow=pkce_cookie_flow,
+        session_state=st.session_state,
+    )
+    st.session_state["_cloud_oauth_last_callback_debug"] = {
+        "code_present": bool(auth_code),
+        "state_present": bool(returned_state),
+        "redirect_state_present": bool(redirect_state),
+        "pkce_cookie_present": bool(pkce_cookie_flow),
+        "pkce_session_present": bool(st.session_state.get("_cloud_oauth_pkce_flow")),
+        "pkce_verifier_resolved": bool(code_verifier),
+    }
+
+    if not code_verifier:
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "رجع Apple برمز الدخول، لكن انتهت جلسة التحقق المؤقتة. جربي زر Apple مرة ثانية.",
+            "en": "Apple returned with a sign-in code, but the temporary verification session expired. Try the Apple button again.",
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
+    if not client.is_configured:
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "إعدادات Supabase غير متاحة حاليًا.",
+            "en": "Supabase configuration is not available right now.",
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    exchange = client.exchange_pkce_code(auth_code, code_verifier)
+    if not exchange.get("ok"):
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": f"تعذر إكمال تسجيل الدخول بأبل: {exchange.get('error') or 'OAuth failed'}",
+            "en": f"Could not finish Apple sign-in: {exchange.get('error') or 'OAuth failed'}",
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    access_token = str(exchange.get("access_token") or "")
+    refresh_token = str(exchange.get("refresh_token") or "")
+    user_obj = exchange.get("user") if isinstance(exchange.get("user"), dict) else {}
+    user_id = str(user_obj.get("id") or "")
+    email = str(user_obj.get("email") or "")
+
+    if not user_id and access_token:
+        user_res = client.get_user(access_token)
+        if user_res.get("ok") and isinstance(user_res.get("user"), dict):
+            user_obj = user_res["user"]
+            user_id = str(user_obj.get("id") or "")
+            email = str(user_obj.get("email") or email)
+
+    if not refresh_token or not _apply_cloud_auth_session(
+        client,
+        email=email,
+        user_id=user_id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        reason_suffix="sign_in",
+    ):
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "رجعنا من Apple، لكن بيانات الجلسة ناقصة. جربي تسجيل الدخول مرة ثانية.",
+            "en": "Apple returned, but the session data was incomplete. Try signing in again.",
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    st.session_state["_cloud_cookie_restore_checked"] = True
+    st.session_state["_cloud_remember_login"] = True
+    forget_pkce_flow(st.session_state)
+    st.session_state["_cloud_oauth_notice"] = {
+        "type": "success",
+        "ar": "تم تسجيل الدخول بأبل وربط السحابة.",
+        "en": "Apple sign-in is connected to cloud sync.",
+    }
+    _clear_oauth_query_params()
+    st.rerun()
 
 
 def _sync_cloud_auth_browser_bridge() -> tuple[dict, bool]:
@@ -415,6 +652,9 @@ def main():
 
     # تهيئة عامة (session_state + css إن كانت داخل config_floosy)
     init_session_state()
+    _handle_cloud_oauth_code_callback()
+    render_cloud_oauth_hash_capture_inline()
+    render_cloud_oauth_callback_capture()
     browser_storage_auth, browser_storage_ready = _sync_cloud_auth_browser_bridge()
     bootstrap_cloud_auth_from_storage()
     _restore_cloud_auth_from_cookie(browser_storage_auth, browser_storage_ready)
@@ -442,6 +682,13 @@ def main():
 
     st.markdown(
         f"""
+        <div
+          id="floosy-language-marker"
+          data-floosy-language="{lang_code}"
+          data-floosy-dir="{lang_dir}"
+          style="display:none !important;"
+          aria-hidden="true"
+        ></div>
         <script>
         (function() {{
           const html = document.documentElement;

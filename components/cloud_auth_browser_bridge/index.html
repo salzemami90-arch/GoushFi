@@ -98,6 +98,99 @@
         }
       }
 
+      function getLocation(targetWin) {
+        try {
+          return targetWin && targetWin.location ? targetWin.location : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function base64UrlEncode(text) {
+        let bytes = [];
+        try {
+          bytes = Array.from(new TextEncoder().encode(text));
+        } catch (error) {
+          const encoded = unescape(encodeURIComponent(text));
+          bytes = Array.from(encoded).map((char) => char.charCodeAt(0));
+        }
+        let binary = "";
+        for (const byte of bytes) {
+          binary += String.fromCharCode(byte);
+        }
+        return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+
+      function base64UrlDecode(text) {
+        const base64 = String(text || "").replace(/-/g, "+").replace(/_/g, "/");
+        const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+        try {
+          const binary = atob(padded);
+          const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+          return new TextDecoder().decode(bytes);
+        } catch (error) {
+          try {
+            return decodeURIComponent(escape(atob(padded)));
+          } catch (nestedError) {
+            return "";
+          }
+        }
+      }
+
+      function decodeJwtPayload(token) {
+        try {
+          const payloadPart = String(token || "").split(".")[1] || "";
+          if (!payloadPart) {
+            return {};
+          }
+          return JSON.parse(base64UrlDecode(payloadPart));
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function captureOAuthValue(storageName) {
+        const sourceWin = collectWindows().find((targetWin) => {
+          const loc = getLocation(targetWin);
+          return loc && /(?:^#|&)refresh_token=/.test(String(loc.hash || ""));
+        });
+
+        if (!sourceWin) {
+          return "";
+        }
+
+        const sourceLocation = getLocation(sourceWin);
+        const hashValue = String((sourceLocation && sourceLocation.hash) || "").replace(/^#/, "");
+        const params = new URLSearchParams(hashValue);
+        const refreshToken = String(params.get("refresh_token") || "").trim();
+        if (!refreshToken) {
+          return "";
+        }
+
+        const claims = decodeJwtPayload(String(params.get("access_token") || "").trim());
+        const encodedPayload = base64UrlEncode(
+          JSON.stringify({
+            email: String(claims.email || ""),
+            user_id: String(claims.sub || ""),
+            refresh_token: refreshToken,
+          }),
+        );
+        writeStoredValue(storageName, encodedPayload);
+
+        window.setTimeout(() => {
+          try {
+            const cleanUrl = `${sourceLocation.origin}${sourceLocation.pathname}${sourceLocation.search}`;
+            sourceLocation.replace(cleanUrl);
+          } catch (error) {
+            try {
+              sourceLocation.hash = "";
+            } catch (nestedError) {}
+          }
+        }, 250);
+
+        return encodedPayload;
+      }
+
       function maybeSendValue(value) {
         const normalized = String(value || "");
         if (normalized === lastSentValue) {
@@ -119,6 +212,10 @@
 
         if (action === "clear") {
           writeStoredValue(storageName, "");
+        } else if (action === "capture_oauth") {
+          maybeSendValue(captureOAuthValue(storageName));
+          Streamlit.setFrameHeight(0);
+          return;
         } else if (desiredValue) {
           writeStoredValue(storageName, desiredValue);
         }

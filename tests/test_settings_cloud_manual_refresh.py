@@ -179,3 +179,40 @@ def test_remember_login_reload_stays_on_for_shared_hosted(monkeypatch):
     monkeypatch.setattr(settings_page, "_local_persistence_enabled", lambda: False)
 
     assert settings_page._cloud_remember_reload_after_write() is True
+
+
+def test_cloud_oauth_redirect_url_carries_pkce_state_and_strips_stale_callback_params(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.context = type(
+        "Context",
+        (),
+        {"url": "https://goushfi.up.railway.app/?page=settings&code=old&state=old&f_lang=en"},
+    )()
+    fake_st.query_params = {}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    redirect_url = settings_page._cloud_oauth_redirect_url("ar", "pkce-state-123")
+
+    assert redirect_url == (
+        "https://goushfi.up.railway.app/?page=settings&f_lang=ar&cloud_oauth=apple"
+        "&cloud_pkce_state=pkce-state-123&f_w=1"
+    )
+
+
+def test_same_tab_oauth_button_renders_self_target(monkeypatch):
+    fake_st = _FakeSt()
+    captured = {}
+
+    def fake_markdown(markup, unsafe_allow_html=False):
+        captured["markup"] = markup
+        captured["unsafe_allow_html"] = unsafe_allow_html
+
+    fake_st.markdown = fake_markdown
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    settings_page._render_same_tab_oauth_button("Continue with Apple", "https://example.com/auth?x=1&y=2")
+
+    assert 'target="_self"' in captured["markup"]
+    assert "https://example.com/auth?x=1&amp;y=2" in captured["markup"]
+    assert "Continue with Apple" in captured["markup"]
+    assert captured["unsafe_allow_html"] is True

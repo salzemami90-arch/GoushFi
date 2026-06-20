@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from services.cloud_auth_cookie import (
@@ -5,6 +6,8 @@ from services.cloud_auth_cookie import (
     clear_cloud_auth_cookie,
     read_cloud_auth_cookie,
     remember_cloud_auth,
+    render_cloud_oauth_callback_capture,
+    render_cloud_oauth_hash_capture_inline,
     sync_cloud_auth_browser_storage,
 )
 
@@ -65,6 +68,82 @@ def test_clear_cloud_auth_cookie_uses_zero_max_age(monkeypatch):
     assert "const maxAge = 0;" in html
     assert "max-age=${maxAge}" in html
     assert "Thu, 01 Jan 1970 00:00:00 GMT" in html
+
+
+def test_render_cloud_oauth_callback_capture_uses_browser_bridge_payload(monkeypatch):
+    service = __import__("services.cloud_auth_cookie", fromlist=["dummy"])
+    encoded = service._encode_payload(
+        {
+            "email": "user@example.com",
+            "user_id": "user-123",
+            "refresh_token": "refresh-token-xyz",
+        }
+    )
+    captured = {}
+    backups = []
+    cookie_scripts = []
+    fake_st = SimpleNamespace(session_state={"_cloud_cookie_restore_checked": True})
+
+    def fake_component(**kwargs):
+        captured.update(kwargs)
+        return encoded
+
+    monkeypatch.setattr("services.cloud_auth_cookie.st", fake_st)
+    monkeypatch.setattr("services.cloud_auth_cookie._is_native_shell_runtime", lambda: False)
+    monkeypatch.setattr("services.cloud_auth_cookie._BROWSER_STORAGE_BRIDGE", fake_component)
+    monkeypatch.setattr("services.cloud_auth_cookie._write_local_auth_backup", lambda payload: backups.append(payload))
+    monkeypatch.setattr(
+        "services.cloud_auth_cookie._render_cookie_script",
+        lambda value, max_age, reload_after_write=False: cookie_scripts.append((value, max_age, reload_after_write)),
+    )
+
+    result = render_cloud_oauth_callback_capture()
+
+    assert result == {
+        "email": "user@example.com",
+        "user_id": "user-123",
+        "refresh_token": "refresh-token-xyz",
+    }
+    assert captured["action"] == "capture_oauth"
+    assert captured["storageName"] == "floosy_cloud_auth_storage"
+    assert backups == [result]
+    assert cookie_scripts == [(encoded, service.COOKIE_MAX_AGE_SECONDS, True)]
+    assert fake_st.session_state["_cloud_cookie_restore_checked"] is False
+
+
+def test_cloud_auth_browser_bridge_captures_oauth_hash():
+    html = Path("components/cloud_auth_browser_bridge/index.html").read_text()
+
+    assert "refresh_token" in html
+    assert "access_token" in html
+    assert "decodeJwtPayload" in html
+    assert "localStorage" in html
+    assert 'action === "capture_oauth"' in html
+    assert "captureOAuthValue" in html
+    assert "sourceLocation.replace(cleanUrl)" in html
+
+
+def test_render_cloud_oauth_hash_capture_inline_reads_parent_location_hash(monkeypatch):
+    captured = {}
+
+    def fake_markdown(html, unsafe_allow_html=False):
+        captured["html"] = html
+        captured["unsafe_allow_html"] = unsafe_allow_html
+
+    monkeypatch.setattr("services.cloud_auth_cookie.st.markdown", fake_markdown)
+    monkeypatch.setattr("services.cloud_auth_cookie._is_native_shell_runtime", lambda: False)
+
+    render_cloud_oauth_hash_capture_inline()
+
+    html = captured["html"]
+    assert "window.location.hash" in html
+    assert "refresh_token" in html
+    assert "access_token" in html
+    assert "window.localStorage.setItem" in html
+    assert "document.cookie" in html
+    assert "window.history.replaceState" in html
+    assert "window.location.reload" in html
+    assert captured["unsafe_allow_html"] is True
 
 
 def test_read_cloud_auth_cookie_decodes_payload(monkeypatch):

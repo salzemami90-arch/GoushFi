@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -131,6 +131,47 @@ class SupabaseSyncClient:
     def is_configured(self) -> bool:
         return bool(self.supabase_url and self.anon_key)
 
+    def build_oauth_authorize_url(
+        self,
+        provider: str,
+        redirect_to: str,
+        *,
+        scopes: str = "",
+        code_challenge: str = "",
+        code_challenge_method: str = "",
+        state: str = "",
+    ) -> str:
+        if not self.is_configured:
+            return ""
+
+        clean_provider = str(provider or "").strip().lower()
+        if clean_provider not in {"apple", "google"}:
+            return ""
+
+        params = {"provider": clean_provider}
+        clean_redirect = str(redirect_to or "").strip()
+        if clean_redirect:
+            params["redirect_to"] = clean_redirect
+
+        clean_scopes = str(scopes or "").strip()
+        if clean_scopes:
+            params["scopes"] = clean_scopes
+
+        clean_code_challenge = str(code_challenge or "").strip()
+        if clean_code_challenge:
+            params["code_challenge"] = clean_code_challenge
+            params["flow_type"] = "pkce"
+
+        clean_code_challenge_method = str(code_challenge_method or "").strip()
+        if clean_code_challenge_method:
+            params["code_challenge_method"] = clean_code_challenge_method
+
+        clean_state = str(state or "").strip()
+        if clean_state:
+            params["state"] = clean_state
+
+        return f"{self.supabase_url}/auth/v1/authorize?{urlencode(params)}"
+
     def _headers(self, access_token: str | None = None, prefer: str | None = None) -> dict[str, str]:
         headers = {
             "apikey": self.anon_key,
@@ -257,6 +298,36 @@ class SupabaseSyncClient:
 
         url = f"{self.supabase_url}/auth/v1/token?grant_type=refresh_token"
         payload = {"refresh_token": clean_refresh_token}
+
+        try:
+            resp = requests.post(url, json=payload, headers=self._headers(), timeout=self.timeout_sec)
+        except Exception as exc:
+            return {"ok": False, "error": f"Network error: {exc}"}
+
+        data = self._json_or_text(resp)
+        if resp.status_code >= 400:
+            message = self._friendly_error(resp, data, ("msg", "error_description", "error"))
+            return {"ok": False, "error": message}
+
+        return {
+            "ok": True,
+            "user": data.get("user") if isinstance(data, dict) else None,
+            "access_token": data.get("access_token") if isinstance(data, dict) else None,
+            "refresh_token": data.get("refresh_token") if isinstance(data, dict) else None,
+            "raw": data,
+        }
+
+    def exchange_pkce_code(self, auth_code: str, code_verifier: str) -> dict[str, Any]:
+        if not self.is_configured:
+            return {"ok": False, "error": "Supabase config is missing."}
+
+        clean_auth_code = str(auth_code or "").strip()
+        clean_code_verifier = str(code_verifier or "").strip()
+        if not clean_auth_code or not clean_code_verifier:
+            return {"ok": False, "error": "Missing OAuth code verifier."}
+
+        url = f"{self.supabase_url}/auth/v1/token?grant_type=pkce"
+        payload = {"auth_code": clean_auth_code, "code_verifier": clean_code_verifier}
 
         try:
             resp = requests.post(url, json=payload, headers=self._headers(), timeout=self.timeout_sec)

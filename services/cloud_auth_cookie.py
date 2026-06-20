@@ -342,6 +342,151 @@ def _render_cookie_script(value: str, max_age: int, *, reload_after_write: bool 
     )
 
 
+def render_cloud_oauth_callback_capture() -> dict:
+    if _is_native_shell_runtime():
+        return {}
+
+    raw_value = _BROWSER_STORAGE_BRIDGE(
+        storageName=STORAGE_NAME,
+        value="",
+        action="capture_oauth",
+        default=_BROWSER_STORAGE_PENDING,
+        key="cloud_oauth_callback_bridge",
+    )
+    if raw_value == _BROWSER_STORAGE_PENDING:
+        return {}
+
+    payload = _extract_auth_payload(_decode_payload(str(raw_value or "")))
+    if not payload:
+        return {}
+
+    _write_local_auth_backup(payload)
+    st.session_state["_cloud_cookie_restore_checked"] = False
+    _render_cookie_script(
+        _encode_payload(payload),
+        COOKIE_MAX_AGE_SECONDS,
+        reload_after_write=True,
+    )
+    return payload
+
+
+def render_cloud_oauth_hash_capture_inline() -> None:
+    if _is_native_shell_runtime():
+        return
+
+    cookie_name = json.dumps(COOKIE_NAME)
+    storage_name = json.dumps(STORAGE_NAME)
+    cookie_max_age = int(COOKIE_MAX_AGE_SECONDS)
+    st.markdown(
+        f"""
+        <script>
+        (function() {{
+          const hashValue = String(window.location.hash || "");
+          if (!/(?:^#|&)refresh_token=/.test(hashValue)) {{
+            return;
+          }}
+
+          const cookieName = {cookie_name};
+          const storageName = {storage_name};
+          const maxAge = {cookie_max_age};
+          const params = new URLSearchParams(hashValue.replace(/^#/, ""));
+          const refreshToken = String(params.get("refresh_token") || "").trim();
+          if (!refreshToken) {{
+            return;
+          }}
+
+          function base64UrlEncode(text) {{
+            let bytes = [];
+            try {{
+              bytes = Array.from(new TextEncoder().encode(text));
+            }} catch (error) {{
+              const encoded = unescape(encodeURIComponent(text));
+              bytes = Array.from(encoded).map((char) => char.charCodeAt(0));
+            }}
+            let binary = "";
+            for (const byte of bytes) {{
+              binary += String.fromCharCode(byte);
+            }}
+            return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+          }}
+
+          function base64UrlDecode(text) {{
+            const base64 = String(text || "").replace(/-/g, "+").replace(/_/g, "/");
+            const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+            try {{
+              const binary = atob(padded);
+              const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+              return new TextDecoder().decode(bytes);
+            }} catch (error) {{
+              try {{
+                return decodeURIComponent(escape(atob(padded)));
+              }} catch (nestedError) {{
+                return "";
+              }}
+            }}
+          }}
+
+          function decodeJwtPayload(token) {{
+            try {{
+              const payloadPart = String(token || "").split(".")[1] || "";
+              if (!payloadPart) {{
+                return {{}};
+              }}
+              return JSON.parse(base64UrlDecode(payloadPart));
+            }} catch (error) {{
+              return {{}};
+            }}
+          }}
+
+          const claims = decodeJwtPayload(String(params.get("access_token") || "").trim());
+          const encodedPayload = base64UrlEncode(JSON.stringify({{
+            email: String(claims.email || ""),
+            user_id: String(claims.sub || ""),
+            refresh_token: refreshToken,
+          }}));
+
+          try {{
+            window.localStorage.setItem(storageName, encodedPayload);
+          }} catch (error) {{}}
+
+          const isHttps = String(window.location.protocol || "").toLowerCase() === "https:";
+          const baseAttrs = `path=/; max-age=${{maxAge}}`;
+          const variants = [
+            `${{cookieName}}=${{encodeURIComponent(encodedPayload)}}; ${{baseAttrs}}; SameSite=Lax${{isHttps ? "; Secure" : ""}}`,
+          ];
+          if (isHttps) {{
+            variants.push(
+              `${{cookieName}}=${{encodeURIComponent(encodedPayload)}}; ${{baseAttrs}}; SameSite=None; Secure`,
+              `${{cookieName}}=${{encodeURIComponent(encodedPayload)}}; ${{baseAttrs}}; SameSite=None; Secure; Partitioned`,
+            );
+          }}
+
+          for (const variant of variants) {{
+            try {{
+              document.cookie = variant;
+            }} catch (error) {{}}
+          }}
+
+          try {{
+            window.history.replaceState(null, document.title, `${{window.location.origin}}${{window.location.pathname}}${{window.location.search}}`);
+          }} catch (error) {{
+            try {{
+              window.location.hash = "";
+            }} catch (nestedError) {{}}
+          }}
+
+          window.setTimeout(() => {{
+            try {{
+              window.location.reload();
+            }} catch (error) {{}}
+          }}, 80);
+        }})();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def remember_cloud_auth(email: str, user_id: str, refresh_token: str, *, reload_after_write: bool = False) -> None:
     clean_refresh_token = str(refresh_token or "").strip()
     if not clean_refresh_token:

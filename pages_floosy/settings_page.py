@@ -1,6 +1,8 @@
 import json
 import html
+import os
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import streamlit as st
 
@@ -29,6 +31,7 @@ from services.cloud_sync_guard import (
     pause_cloud_auto_sync,
     should_keep_local_data_before_auto_import,
 )
+from services.oauth_pkce import get_or_create_pkce_flow, render_pkce_cookie
 from services.supabase_sync import SupabaseSyncClient
 
 
@@ -151,6 +154,155 @@ def _cloud_remember_reload_after_write() -> bool:
                 runtime_url = ""
 
     return _is_shared_hosted_url(runtime_url)
+
+
+def _runtime_flag_value(*keys: str) -> bool | None:
+    truthy = {"1", "true", "yes", "on", "enabled"}
+    falsy = {"0", "false", "no", "off", "disabled"}
+
+    for key in keys:
+        raw_value = str(os.getenv(key, "") or "").strip().lower()
+        if raw_value in truthy:
+            return True
+        if raw_value in falsy:
+            return False
+
+    secrets = getattr(st, "secrets", None)
+    secret_sources = [secrets] if secrets is not None else []
+    for section_name in ("supabase", "cloud", "auth"):
+        try:
+            section = secrets.get(section_name) if hasattr(secrets, "get") else None
+        except Exception:
+            section = None
+        if section is not None:
+            secret_sources.append(section)
+
+    for source in secret_sources:
+        for key in keys:
+            value = None
+            try:
+                if hasattr(source, "get"):
+                    value = source.get(key)
+            except Exception:
+                value = None
+            if value is None:
+                try:
+                    value = source[key]
+                except Exception:
+                    value = None
+            raw_value = str(value or "").strip().lower()
+            if raw_value in truthy:
+                return True
+            if raw_value in falsy:
+                return False
+
+    return None
+
+
+def _runtime_flag_enabled(*keys: str) -> bool:
+    return _runtime_flag_value(*keys) is True
+
+
+def _cloud_apple_sign_in_enabled() -> bool:
+    if _runtime_flag_enabled("FLOOSY_DISABLE_APPLE_AUTH", "APPLE_SIGN_IN_DISABLED"):
+        return False
+
+    explicit_value = _runtime_flag_value(
+        "FLOOSY_ENABLE_APPLE_AUTH",
+        "SUPABASE_APPLE_AUTH_ENABLED",
+        "APPLE_SIGN_IN_ENABLED",
+    )
+    return True if explicit_value is None else explicit_value
+
+
+def _current_runtime_url() -> str:
+    try:
+        context = getattr(st, "context", None)
+    except Exception:
+        context = None
+
+    runtime_url = ""
+    if context is not None:
+        try:
+            runtime_url = str(getattr(context, "url", "") or "")
+        except Exception:
+            runtime_url = ""
+
+        if not runtime_url:
+            try:
+                headers = getattr(context, "headers", {}) or {}
+                if hasattr(headers, "get"):
+                    host = str(headers.get("host") or headers.get("Host") or "").strip()
+                elif isinstance(headers, dict):
+                    host = str(headers.get("host") or headers.get("Host") or "").strip()
+                else:
+                    host = ""
+                if host:
+                    scheme = "http" if host.startswith(("localhost", "127.0.0.1", "0.0.0.0")) else "https"
+                    runtime_url = f"{scheme}://{host}"
+            except Exception:
+                runtime_url = ""
+
+    return runtime_url
+
+
+def _cloud_oauth_redirect_url(lang_code: str, pkce_state: str = "") -> str:
+    runtime_url = _current_runtime_url().strip()
+    if not runtime_url:
+        return ""
+
+    parts = urlsplit(runtime_url)
+    if not parts.scheme or not parts.netloc:
+        return ""
+
+    query_items = dict(parse_qsl(parts.query, keep_blank_values=True))
+    for stale_key in ("code", "state", "error", "error_code", "error_description", "cloud_oauth", "cloud_pkce_state"):
+        query_items.pop(stale_key, None)
+    query_items["page"] = "settings"
+    query_items["cloud_oauth"] = "apple"
+    if str(pkce_state or "").strip():
+        query_items["cloud_pkce_state"] = str(pkce_state or "").strip()
+    query_items["f_w"] = "1"
+    query_items["f_lang"] = str(lang_code or "ar")
+    if str(st.query_params.get("f_shell", "") or "").strip() == "1":
+        query_items["f_shell"] = "1"
+
+    clean_path = parts.path or "/"
+    return urlunsplit((parts.scheme, parts.netloc, clean_path, urlencode(query_items), ""))
+
+
+def _render_same_tab_oauth_button(label: str, url: str) -> None:
+    safe_label = html.escape(str(label or ""))
+    safe_url = html.escape(str(url or ""), quote=True)
+    st.markdown(
+        f"""
+        <style>
+        .goushfi-oauth-apple-button {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 2.55rem;
+            padding: 0.45rem 0.85rem;
+            border: 1px solid #ff4b4b;
+            border-radius: 0.5rem;
+            background: #ffffff;
+            color: #4b587c !important;
+            font-weight: 600;
+            text-decoration: none !important;
+            box-sizing: border-box;
+        }}
+        .goushfi-oauth-apple-button:hover {{
+            border-color: #e03e3e;
+            background: #fff7f7;
+            color: #1f2a44 !important;
+            text-decoration: none !important;
+        }}
+        </style>
+        <a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self">{safe_label}</a>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _create_initial_cloud_copy_after_sign_up(
@@ -556,6 +708,28 @@ def render():
 
     _render_settings_shell_css()
     st.title(t("إعدادات GoushFi", "GoushFi Settings"))
+    oauth_notice = st.session_state.pop("_cloud_oauth_notice", None)
+    if isinstance(oauth_notice, dict):
+        notice_text = str(oauth_notice.get("en" if is_en else "ar") or oauth_notice.get("ar") or oauth_notice.get("en") or "")
+        notice_type = str(oauth_notice.get("type") or "info")
+        if notice_text:
+            if notice_type == "success":
+                st.success(notice_text)
+            elif notice_type == "warning":
+                st.warning(notice_text)
+                oauth_debug = st.session_state.get("_cloud_oauth_last_callback_debug")
+                if isinstance(oauth_debug, dict):
+                    st.caption(
+                        "OAuth: "
+                        f"code={'yes' if oauth_debug.get('code_present') else 'no'}, "
+                        f"state={'yes' if oauth_debug.get('state_present') else 'no'}, "
+                        f"redirect_state={'yes' if oauth_debug.get('redirect_state_present') else 'no'}, "
+                        f"cookie={'yes' if oauth_debug.get('pkce_cookie_present') else 'no'}, "
+                        f"session={'yes' if oauth_debug.get('pkce_session_present') else 'no'}, "
+                        f"verifier={'yes' if oauth_debug.get('pkce_verifier_resolved') else 'no'}"
+                    )
+            else:
+                st.info(notice_text)
     settings_view = str(st.session_state.get("settings_view", "home") or "home")
 
     section_labels = {
@@ -1212,6 +1386,37 @@ def render():
                                     "When enabled, sign-in stays saved on this browser. Use Sign Out to remove it.",
                                 )
                             )
+                            apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
+                            render_pkce_cookie(apple_pkce_flow)
+                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, apple_pkce_flow["state"])
+                            apple_auth_url = client.build_oauth_authorize_url(
+                                "apple",
+                                apple_redirect_url,
+                                scopes="name email",
+                                code_challenge=apple_pkce_flow["code_challenge"],
+                                code_challenge_method=apple_pkce_flow["code_challenge_method"],
+                                state=apple_pkce_flow["state"],
+                            )
+                            apple_enabled = _cloud_apple_sign_in_enabled()
+                            st.caption(t("أو", "Or"))
+                            if apple_enabled and apple_auth_url:
+                                _render_same_tab_oauth_button(
+                                    t("متابعة باستخدام Apple", "Continue with Apple"),
+                                    apple_auth_url,
+                                )
+                            else:
+                                st.button(
+                                    t("متابعة باستخدام Apple", "Continue with Apple"),
+                                    use_container_width=True,
+                                    disabled=True,
+                                    key="cloud_apple_signin_disabled",
+                                )
+                                st.caption(
+                                    t(
+                                        "تسجيل الدخول بأبل جاهز بالكود، لكنه يحتاج تفعيل Apple/Supabase أولًا.",
+                                        "Apple sign-in is prepared in code, but Apple/Supabase setup must be enabled first.",
+                                    )
+                                )
                         submit_label = t("إرسال رابط الاستعادة", "Send Reset Link") if is_reset_mode else t("متابعة", "Continue")
                         submit = st.button(submit_label, use_container_width=True, key="cloud_auth_submit")
 
