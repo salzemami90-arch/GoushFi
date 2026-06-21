@@ -754,7 +754,7 @@ def render():
             elif notice_type == "warning":
                 st.warning(notice_text)
                 oauth_debug = st.session_state.get("_cloud_oauth_last_callback_debug")
-                if isinstance(oauth_debug, dict):
+                if isinstance(oauth_debug, dict) and _runtime_flag_enabled("FLOOSY_OAUTH_DEBUG", "OAUTH_DEBUG"):
                     st.caption(
                         "OAuth: "
                         f"code={'yes' if oauth_debug.get('code_present') else 'no'}, "

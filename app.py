@@ -275,6 +275,7 @@ def _handle_cloud_oauth_code_callback() -> None:
     st.session_state["_cloud_cookie_restore_checked"] = True
     st.session_state["_cloud_remember_login"] = True
     forget_pkce_flow(st.session_state)
+    st.session_state.pop("_cloud_oauth_last_callback_debug", None)
     st.session_state["_cloud_oauth_notice"] = {
         "type": "success",
         "ar": "تم تسجيل الدخول بأبل وربط السحابة.",
