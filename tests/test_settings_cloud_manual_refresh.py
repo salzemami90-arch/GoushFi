@@ -216,3 +216,38 @@ def test_same_tab_oauth_button_renders_self_target(monkeypatch):
     assert "https://example.com/auth?x=1&amp;y=2" in captured["markup"]
     assert "Continue with Apple" in captured["markup"]
     assert captured["unsafe_allow_html"] is True
+
+
+def test_same_tab_oauth_redirect_attempts_parent_navigation(monkeypatch):
+    fake_st = _FakeSt()
+    captured = {}
+
+    def fake_html(markup, height=0):
+        captured["component_markup"] = markup
+        captured["height"] = height
+
+    def fake_caption(text):
+        captured["caption"] = text
+
+    def fake_markdown(markup, unsafe_allow_html=False):
+        captured["link_markup"] = markup
+        captured["unsafe_allow_html"] = unsafe_allow_html
+
+    fake_st.caption = fake_caption
+    fake_st.markdown = fake_markdown
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(settings_page.components, "html", fake_html)
+
+    settings_page._render_same_tab_oauth_redirect(
+        "Continue with Apple",
+        "https://example.com/auth?x=1&y=2",
+    )
+
+    assert "window.parent" in captured["component_markup"]
+    assert "location.assign" in captured["component_markup"]
+    assert "https://example.com/auth?x=1&y=2" in captured["component_markup"]
+    assert captured["height"] == 0
+    assert captured["caption"] == "Opening Apple sign-in..."
+    assert 'target="_self"' in captured["link_markup"]
+    assert "https://example.com/auth?x=1&amp;y=2" in captured["link_markup"]
+    assert captured["unsafe_allow_html"] is True

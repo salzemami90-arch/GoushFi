@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from config_floosy import (
     CURRENCY_OPTIONS,
@@ -301,6 +302,41 @@ def _render_same_tab_oauth_button(label: str, url: str) -> None:
         </style>
         <a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self">{safe_label}</a>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_same_tab_oauth_redirect(label: str, url: str) -> None:
+    clean_url = str(url or "").strip()
+    if not clean_url:
+        return
+
+    safe_label = html.escape(str(label or ""))
+    safe_url = html.escape(clean_url, quote=True)
+    url_json = json.dumps(clean_url)
+    components.html(
+        f"""
+        <script>
+        (function() {{
+          const target = {url_json};
+          const candidates = [window.parent, window.top, window];
+          for (const candidate of candidates) {{
+            try {{
+              if (candidate && candidate.location) {{
+                candidate.location.assign(target);
+                return;
+              }}
+            }} catch (error) {{}}
+          }}
+        }})();
+        </script>
+        <meta http-equiv="refresh" content="0; url={safe_url}">
+        """,
+        height=0,
+    )
+    st.caption("Opening Apple sign-in...")
+    st.markdown(
+        f'<a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self">{safe_label}</a>',
         unsafe_allow_html=True,
     )
 
@@ -1400,10 +1436,9 @@ def render():
                             apple_enabled = _cloud_apple_sign_in_enabled()
                             st.caption(t("أو", "Or"))
                             if apple_enabled and apple_auth_url:
-                                _render_same_tab_oauth_button(
-                                    t("متابعة باستخدام Apple", "Continue with Apple"),
-                                    apple_auth_url,
-                                )
+                                apple_label = t("متابعة باستخدام Apple", "Continue with Apple")
+                                if st.button(apple_label, use_container_width=True, key="cloud_apple_signin"):
+                                    _render_same_tab_oauth_redirect(apple_label, apple_auth_url)
                             else:
                                 st.button(
                                     t("متابعة باستخدام Apple", "Continue with Apple"),
