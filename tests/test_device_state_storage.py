@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from services import device_state_storage
 from services.device_state_storage import (
     sync_device_state_browser_storage,
@@ -56,3 +58,16 @@ def test_device_state_storage_clear_removes_saved_value(monkeypatch):
     assert restored == {}
     assert captured["action"] == "clear"
     assert captured["value"] == ""
+
+
+def test_device_state_bridge_clear_uses_safe_indexeddb_cleanup():
+    bridge_html = (
+        Path(__file__).resolve().parent.parent
+        / "components"
+        / "device_state_browser_bridge"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+
+    assert "clearIndexedDBCopies" in bridge_html
+    assert ".catch(() => {})" in bridge_html
+    assert "indexedDBRef.deleteDatabase(name)" in bridge_html

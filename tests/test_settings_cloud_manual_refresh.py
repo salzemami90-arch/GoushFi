@@ -41,6 +41,11 @@ class _SignOutClient:
         return {"ok": True}
 
 
+class _FailingSignOutClient:
+    def sign_out(self, access_token):
+        raise RuntimeError("network down")
+
+
 class _FreshStartClient:
     is_configured = True
 
@@ -139,10 +144,48 @@ def test_cloud_sign_out_clears_local_auth_and_browser_storage(monkeypatch):
     assert fake_st.session_state["_cloud_remember_login"] is False
     assert fake_st.session_state["_cloud_cookie_restore_checked"] is True
     assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
+    assert fake_st.session_state["_cloud_auth_cookie_clear_pending"] is True
     assert fake_st.session_state["app_scope"] == {"owner_user_id": "", "owner_email": ""}
     assert fake_st.session_state[READY_USER_KEY] == ""
     assert fake_st.session_state[PAUSE_REASON_KEY] == ""
-    assert cleared == {"reload_after_write": True}
+    assert cleared == {"reload_after_write": False}
+
+
+def test_cloud_sign_out_still_clears_local_state_when_network_fails(monkeypatch):
+    fake_st = _FakeSt()
+    cleared = {}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(
+        settings_page,
+        "clear_cloud_auth_cookie",
+        lambda reload_after_write=False: cleared.update({"reload_after_write": reload_after_write}),
+    )
+
+    settings_page._sign_out_cloud_session(_FailingSignOutClient())
+
+    assert fake_st.session_state["cloud_auth"]["logged_in"] is False
+    assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
+    assert fake_st.session_state["_cloud_auth_cookie_clear_pending"] is True
+    assert cleared == {"reload_after_write": False}
+
+
+def test_pending_cloud_auth_clear_renders_once(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["_cloud_auth_cookie_clear_pending"] = True
+    cleared = []
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(
+        settings_page,
+        "clear_cloud_auth_cookie",
+        lambda reload_after_write=False: cleared.append(reload_after_write),
+    )
+
+    settings_page._render_pending_cloud_auth_clear()
+    settings_page._render_pending_cloud_auth_clear()
+
+    assert "_cloud_auth_cookie_clear_pending" not in fake_st.session_state
+    assert cleared == [False]
 
 
 def test_fresh_start_deletes_cloud_then_clears_local_and_signs_out(monkeypatch):
@@ -183,7 +226,7 @@ def test_fresh_start_deletes_cloud_then_clears_local_and_signs_out(monkeypatch):
     assert fake_st.session_state["_device_browser_storage_clear_requested"] is True
     assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
     assert fake_st.session_state["_cloud_remember_login"] is False
-    assert cleared == {"reload_after_write": True}
+    assert cleared == {"reload_after_write": False}
 
 
 def test_fresh_start_keeps_local_data_when_cloud_delete_fails(monkeypatch):
@@ -204,6 +247,55 @@ def test_fresh_start_keeps_local_data_when_cloud_delete_fails(monkeypatch):
     assert reset["called"] is False
     assert fake_st.session_state["transactions"] == {"2026-06": [{"amount": 229}]}
     assert fake_st.session_state["cloud_auth"]["logged_in"] is True
+
+
+def test_fresh_start_reports_local_reset_failure_without_crashing(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["cloud_auth"] = {"logged_in": False}
+    fake_st.session_state["settings"] = {"cloud_sync_enabled": False}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(settings_page, "clear_cloud_auth_cookie", lambda reload_after_write=False: None)
+    monkeypatch.setattr(settings_page, "reset_local_app_data", lambda: (_ for _ in ()).throw(RuntimeError("storage failed")))
+
+    ok, error = settings_page._fresh_start_app_data(None)
+
+    assert ok is False
+    assert "storage failed" in error
+    assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
+
+
+def test_save_method_normalizes_both_enabled_to_cloud_only(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings"] = {"device_save_enabled": True, "cloud_sync_enabled": True}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    device_enabled, cloud_enabled = settings_page._save_method_widget_state(device_save_available=True)
+
+    assert device_enabled is False
+    assert cloud_enabled is True
+    assert fake_st.session_state["settings"]["device_save_enabled"] is False
+    assert fake_st.session_state["settings"]["cloud_sync_enabled"] is True
+
+
+def test_save_method_callbacks_make_options_mutually_exclusive(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings_device_save_enabled"] = True
+    fake_st.session_state["settings_cloud_sync_enabled"] = True
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    settings_page._on_device_save_method_changed()
+
+    assert fake_st.session_state["settings_device_save_enabled"] is True
+    assert fake_st.session_state["settings_cloud_sync_enabled"] is False
+
+    fake_st.session_state["settings_device_save_enabled"] = True
+    fake_st.session_state["settings_cloud_sync_enabled"] = True
+
+    settings_page._on_cloud_save_method_changed()
+
+    assert fake_st.session_state["settings_device_save_enabled"] is False
+    assert fake_st.session_state["settings_cloud_sync_enabled"] is True
 
 
 class _InitialCloudCopyClient:

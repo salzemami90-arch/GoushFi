@@ -48,6 +48,7 @@ default_settings = {
     "show_status_project": True,
     "device_save_enabled": True,
     "cloud_sync_enabled": False,
+    "cloud_sync_mode": "auto",
     "cloud_last_sync_at": "",
 }
 

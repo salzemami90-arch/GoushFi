@@ -114,18 +114,45 @@ def _sign_out_cloud_session(client: SupabaseSyncClient | None = None) -> None:
         access_token = str(cloud_auth.get("access_token") or "").strip()
 
     if client is not None and access_token:
-        client.sign_out(access_token)
+        try:
+            client.sign_out(access_token)
+        except Exception:
+            # Sign-out cleanup must still complete locally if the network is down.
+            pass
 
     _set_cloud_auth(False)
     _set_scope_owner("", "")
     st.session_state["_cloud_remember_login"] = False
     st.session_state["_cloud_cookie_restore_checked"] = True
     st.session_state["_cloud_browser_storage_clear_requested"] = True
+    st.session_state["_cloud_auth_cookie_clear_pending"] = True
     st.session_state["_cloud_last_snapshot"] = ""
     st.session_state["_cloud_last_pull_user"] = ""
     st.session_state["_cloud_sync_last_error"] = ""
     clear_cloud_sync_guard(st.session_state)
-    clear_cloud_auth_cookie(reload_after_write=True)
+    clear_cloud_auth_cookie(reload_after_write=False)
+
+
+def _render_pending_cloud_auth_clear() -> None:
+    if not st.session_state.pop("_cloud_auth_cookie_clear_pending", False):
+        return
+    clear_cloud_auth_cookie(reload_after_write=False)
+
+
+def _safe_reset_local_app_data() -> tuple[bool, str]:
+    try:
+        reset_local_app_data()
+    except Exception as exc:
+        return False, str(exc or "local_reset_failed")
+    return True, ""
+
+
+def _safe_delete_local_persistent_copy() -> tuple[bool, str]:
+    try:
+        delete_local_persistent_copy()
+    except Exception as exc:
+        return False, str(exc or "local_delete_failed")
+    return True, ""
 
 
 def _fresh_start_app_data(client: SupabaseSyncClient | None = None) -> tuple[bool, str]:
@@ -133,16 +160,19 @@ def _fresh_start_app_data(client: SupabaseSyncClient | None = None) -> tuple[boo
     logged_in = bool(isinstance(cloud_auth, dict) and cloud_auth.get("logged_in") and cloud_auth.get("access_token"))
 
     if logged_in and client is not None and client.is_configured:
-        cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
-        if refresh_error:
-            return False, str(refresh_error)
+        try:
+            cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
+            if refresh_error:
+                return False, str(refresh_error)
 
-        delete_res = client.delete_user_data(
-            str(cloud_auth.get("user_id") or ""),
-            str(cloud_auth.get("access_token") or ""),
-        )
-        if not delete_res.get("ok"):
-            return False, str(delete_res.get("error") or "cloud_delete_failed")
+            delete_res = client.delete_user_data(
+                str(cloud_auth.get("user_id") or ""),
+                str(cloud_auth.get("access_token") or ""),
+            )
+            if not delete_res.get("ok"):
+                return False, str(delete_res.get("error") or "cloud_delete_failed")
+        except Exception as exc:
+            return False, str(exc or "cloud_delete_failed")
 
     if logged_in:
         _sign_out_cloud_session(client)
@@ -152,15 +182,51 @@ def _fresh_start_app_data(client: SupabaseSyncClient | None = None) -> tuple[boo
         st.session_state["_cloud_remember_login"] = False
         st.session_state["_cloud_cookie_restore_checked"] = True
         st.session_state["_cloud_browser_storage_clear_requested"] = True
-        clear_cloud_auth_cookie(reload_after_write=True)
+        st.session_state["_cloud_auth_cookie_clear_pending"] = True
+        clear_cloud_auth_cookie(reload_after_write=False)
 
-    reset_local_app_data()
+    reset_ok, reset_error = _safe_reset_local_app_data()
+    if not reset_ok:
+        return False, reset_error
     st.session_state["_device_browser_storage_clear_requested"] = True
     st.session_state["_cloud_browser_storage_clear_requested"] = True
     st.session_state["_cloud_cookie_restore_checked"] = True
     st.session_state["_cloud_remember_login"] = False
     clear_cloud_sync_guard(st.session_state)
     return True, ""
+
+
+def _save_method_widget_state(device_save_available: bool) -> tuple[bool, bool]:
+    settings = st.session_state.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+        st.session_state["settings"] = settings
+
+    device_enabled = bool(settings.get("device_save_enabled", True)) and bool(device_save_available)
+    cloud_enabled = bool(settings.get("cloud_sync_enabled", False))
+    if device_enabled and cloud_enabled:
+        device_enabled = False
+        settings["device_save_enabled"] = False
+        settings["cloud_sync_enabled"] = True
+    if not device_save_available:
+        device_enabled = False
+        settings["device_save_enabled"] = False
+    return device_enabled, cloud_enabled
+
+
+def _on_device_save_method_changed() -> None:
+    if bool(st.session_state.get("settings_device_save_enabled")):
+        st.session_state["settings_cloud_sync_enabled"] = False
+
+
+def _on_cloud_save_method_changed() -> None:
+    if bool(st.session_state.get("settings_cloud_sync_enabled")):
+        st.session_state["settings_device_save_enabled"] = False
+
+
+def _cloud_sync_mode(settings: dict) -> str:
+    mode = str(settings.get("cloud_sync_mode", "auto") or "auto").strip().lower()
+    return mode if mode in {"auto", "manual"} else "auto"
 
 
 def _sync_snapshot_from_state() -> None:
@@ -335,8 +401,9 @@ def _render_same_tab_oauth_button(label: str, url: str) -> None:
     button_style = html.escape(
         "display:flex;align-items:center;justify-content:center;width:100%;"
         "min-height:2.55rem;padding:0.45rem 0.85rem;margin:0.15rem 0 0.45rem 0;"
-        "border:1px solid #ff4b4b;border-radius:0.5rem;background:white;color:#4b587c;"
-        "font-weight:600;text-decoration:none;box-sizing:border-box;",
+        "border:1px solid rgba(15,23,42,0.18);border-radius:0.5rem;background:#ffffff;"
+        "color:#111827;font-weight:700;text-decoration:none;box-sizing:border-box;"
+        "box-shadow:0 1px 2px rgba(15,23,42,0.05);",
         quote=True,
     )
     st.markdown(
@@ -796,8 +863,18 @@ def render():
     is_en = lang_code == "en"
     t = make_t()
 
+    _render_pending_cloud_auth_clear()
     _render_settings_shell_css()
     st.title(t("إعدادات GoushFi", "GoushFi Settings"))
+    if st.session_state.pop("_cloud_signout_notice", False):
+        st.success(t("تم تسجيل الخروج.", "Signed out."))
+    if st.session_state.pop("_fresh_start_notice", False):
+        st.success(
+            t(
+                "تم تصفير التطبيق. بيانات الجهاز والسحابة انمسحت، وتم تسجيل الخروج من السحابة.",
+                "App reset complete. Device and cloud data were cleared, and cloud sign-in was removed.",
+            )
+        )
     oauth_notice = st.session_state.pop("_cloud_oauth_notice", None)
     if isinstance(oauth_notice, dict):
         notice_text = str(oauth_notice.get("en" if is_en else "ar") or oauth_notice.get("ar") or oauth_notice.get("en") or "")
@@ -840,7 +917,8 @@ def render():
     cloud_auth = st.session_state.get("cloud_auth", {})
     cloud_logged_in = bool(cloud_auth.get("logged_in")) and bool(cloud_auth.get("access_token"))
     device_save_available = bool(_local_persistence_enabled() or browser_device_storage_available())
-    device_save_enabled = bool(settings.get("device_save_enabled", True)) and device_save_available
+    device_save_enabled, cloud_sync_enabled = _save_method_widget_state(device_save_available)
+    st.session_state.settings = settings
     if not device_save_available:
         device_storage_line = t(
             "الجهاز: حفظ نسخة دائمة غير متاح في هذه البيئة",
@@ -1110,57 +1188,91 @@ def render():
             st.markdown(f"**{t('طريقة الحفظ', 'Save Method')}**")
             st.caption(
                 t(
-                    "اختر وين يحتفظ GoushFi بنسخة من بياناتك. يمكن تشغيل الجهاز والسحابة معًا.",
-                    "Choose where GoushFi keeps a copy of your data. Device and cloud can both be on.",
+                    "اختر مكان حفظ واحد لنسخة بياناتك. عند تفعيل خيار، يتم إيقاف الخيار الآخر تلقائيًا.",
+                    "Choose one save location for your data copy. Turning one option on automatically turns the other off.",
                 )
             )
 
+            device_save_current, cloud_sync_current = _save_method_widget_state(device_save_available)
+            if "settings_device_save_enabled" not in st.session_state:
+                st.session_state["settings_device_save_enabled"] = device_save_current
+            if "settings_cloud_sync_enabled" not in st.session_state:
+                st.session_state["settings_cloud_sync_enabled"] = cloud_sync_current
+            if not device_save_available:
+                st.session_state["settings_device_save_enabled"] = False
+            if (
+                bool(st.session_state.get("settings_device_save_enabled"))
+                and bool(st.session_state.get("settings_cloud_sync_enabled"))
+            ):
+                st.session_state["settings_device_save_enabled"] = False
+
             save_col, cloud_col = st.columns(2)
             with save_col:
-                device_save_current = bool(settings.get("device_save_enabled", True))
-                device_save_choice = st.checkbox(
+                st.checkbox(
                     t("حفظ نسخة على هذا الجهاز", "Save a copy on this device"),
-                    value=device_save_current and device_save_available,
                     disabled=not device_save_available,
                     help=t(
                         "إذا أوقفته، لن يحتفظ التطبيق بنسخة دائمة على هذا الجهاز. استخدم السحابة لحفظ بياناتك.",
                         "When off, the app will not keep a permanent copy on this device. Use cloud to keep your data.",
                     ),
                     key="settings_device_save_enabled",
+                    on_change=_on_device_save_method_changed,
                 )
             with cloud_col:
-                cloud_sync_enabled = st.checkbox(
+                st.checkbox(
                     t("تفعيل المزامنة السحابية", "Enable Cloud Sync"),
-                    value=bool(settings.get("cloud_sync_enabled", False)),
                     help=t(
                         "اختياري. عند تسجيل الدخول، يمكن حفظ نسخة سحابية واستعادتها من جهاز آخر.",
                         "Optional. After sign-in, you can keep a cloud copy and restore it on another device.",
                     ),
                     key="settings_cloud_sync_enabled",
+                    on_change=_on_cloud_save_method_changed,
                 )
 
-            if not device_save_available:
+            device_save_choice = bool(st.session_state.get("settings_device_save_enabled")) and device_save_available
+            cloud_sync_enabled = bool(st.session_state.get("settings_cloud_sync_enabled"))
+            device_save_changed = device_save_choice != device_save_current
+            cloud_sync_changed = cloud_sync_enabled != cloud_sync_current
+
+            if device_save_changed or cloud_sync_changed:
+                settings["device_save_enabled"] = device_save_choice
+                settings["cloud_sync_enabled"] = cloud_sync_enabled
+                st.session_state.settings = settings
+                if not cloud_sync_enabled:
+                    st.session_state["_cloud_last_snapshot"] = ""
+
+                if device_save_choice:
+                    if device_save_changed:
+                        save_persistent_state()
+                        st.success(t("تم تفعيل حفظ نسخة على هذا الجهاز.", "Device save is now on."))
+                else:
+                    if device_save_changed:
+                        delete_ok, delete_error = _safe_delete_local_persistent_copy()
+                        st.session_state["_device_browser_storage_clear_requested"] = True
+                        if delete_ok:
+                            st.warning(
+                                t(
+                                    "تم إيقاف حفظ الجهاز وحذف النسخة المحلية المحفوظة. بيانات الجلسة الحالية ما زالت مفتوحة الآن.",
+                                    "Device save is now off and the saved local copy was deleted. Current session data is still open for now.",
+                                )
+                            )
+                        else:
+                            st.warning(
+                                t(
+                                    "تم إيقاف حفظ الجهاز، لكن تعذر حذف النسخة المحلية الآن. جربي مرة ثانية إذا استمر التنبيه.",
+                                    "Device save is now off, but the local copy could not be deleted right now. Try again if the warning persists.",
+                                )
+                            )
+                            st.caption(_cloud_error_text(delete_error, t))
+
+                st.rerun()
+            elif not device_save_available:
                 st.caption(
                     t(
                         "حفظ نسخة دائمة على الجهاز غير مفعّل في هذه البيئة. استخدم السحابة للنسخة الدائمة.",
                         "Permanent device save is not enabled in this environment. Use cloud for the permanent copy.",
                     )
                 )
-            elif device_save_choice != device_save_current:
-                settings["device_save_enabled"] = device_save_choice
-                st.session_state.settings = settings
-                if device_save_choice:
-                    save_persistent_state()
-                    st.success(t("تم تفعيل حفظ نسخة على هذا الجهاز.", "Device save is now on."))
-                else:
-                    delete_local_persistent_copy()
-                    st.session_state["_device_browser_storage_clear_requested"] = True
-                    st.warning(
-                        t(
-                            "تم إيقاف حفظ الجهاز وحذف النسخة المحلية المحفوظة. بيانات الجلسة الحالية ما زالت مفتوحة الآن.",
-                            "Device save is now off and the saved local copy was deleted. Current session data is still open for now.",
-                        )
-                    )
             elif device_save_choice:
                 st.caption(
                     t(
@@ -1176,13 +1288,6 @@ def render():
                     )
                 )
 
-        if cloud_sync_enabled != bool(settings.get("cloud_sync_enabled", False)):
-            settings["cloud_sync_enabled"] = cloud_sync_enabled
-            st.session_state.settings = settings
-            if not cloud_sync_enabled:
-                st.session_state["_cloud_last_snapshot"] = ""
-            st.rerun()
-
         cloud_auth = st.session_state.get("cloud_auth", {})
 
         with st.expander(t("حساب السحابة", "Cloud Account"), expanded=False):
@@ -1196,10 +1301,44 @@ def render():
                 if bool(cloud_auth.get("logged_in")) and bool(cloud_auth.get("access_token")):
                     if st.button(t("تسجيل خروج من السحابة", "Sign Out from Cloud"), key="cloud_signout_disabled_btn"):
                         _sign_out_cloud_session(SupabaseSyncClient.from_runtime(getattr(st, "secrets", None)))
-                        st.success(t("تم تسجيل الخروج.", "Signed out."))
-                        st.stop()
+                        st.session_state["_cloud_signout_notice"] = True
+                        st.rerun()
             else:
                 client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
+                sync_mode_options = ["auto", "manual"]
+                sync_mode_labels = {
+                    "auto": t("تلقائية", "Automatic"),
+                    "manual": t("يدوية", "Manual"),
+                }
+                current_sync_mode = _cloud_sync_mode(settings)
+                selected_sync_mode = st.radio(
+                    t("طريقة المزامنة", "Sync Mode"),
+                    sync_mode_options,
+                    index=sync_mode_options.index(current_sync_mode),
+                    format_func=lambda mode: sync_mode_labels.get(mode, str(mode)),
+                    horizontal=True,
+                    key="cloud_sync_mode_choice",
+                )
+                if selected_sync_mode != current_sync_mode:
+                    settings["cloud_sync_mode"] = selected_sync_mode
+                    st.session_state.settings = settings
+                    save_persistent_state()
+                    st.rerun()
+
+                if selected_sync_mode == "manual":
+                    st.info(
+                        t(
+                            "المزامنة اليدوية مفعّلة. استخدم رفع للسحابة متى ما تبي تحفظ التغييرات أونلاين.",
+                            "Manual sync is on. Use Upload to Cloud when you want to save changes online.",
+                        )
+                    )
+                else:
+                    st.caption(
+                        t(
+                            "GoushFi يرفع التغييرات تلقائيًا بعد تعديل البيانات.",
+                            "GoushFi uploads changes automatically after you edit data.",
+                        )
+                    )
 
                 if not client.is_configured:
                     st.info(
@@ -1320,8 +1459,8 @@ def render():
                         with r2c1:
                             if st.button(t("تسجيل خروج من السحابة", "Sign Out from Cloud"), use_container_width=True, key="cloud_signout_btn"):
                                 _sign_out_cloud_session(client)
-                                st.success(t("تم تسجيل الخروج.", "Signed out."))
-                                st.stop()
+                                st.session_state["_cloud_signout_notice"] = True
+                                st.rerun()
 
                         with r2c2:
                             delete_confirm = st.checkbox(
@@ -1724,13 +1863,8 @@ def render():
                 fresh_client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
                 ok, fresh_error = _fresh_start_app_data(fresh_client)
                 if ok:
-                    st.success(
-                        t(
-                            "تم تصفير التطبيق. بيانات الجهاز والسحابة انمسحت، وتم تسجيل الخروج من السحابة.",
-                            "App reset complete. Device and cloud data were cleared, and cloud sign-in was removed.",
-                        )
-                    )
-                    st.stop()
+                    st.session_state["_fresh_start_notice"] = True
+                    st.rerun()
                 st.error(
                     t(
                         "تعذر تصفير التطبيق. لم يتم مسح بيانات الجهاز لأن حذف السحابة لم يكتمل.",

@@ -98,6 +98,34 @@
         }
       }
 
+      function clearIndexedDBCopies() {
+        for (const win of collectWindows()) {
+          try {
+            const indexedDBRef = win && win.indexedDB ? win.indexedDB : null;
+            if (!indexedDBRef || typeof indexedDBRef.databases !== "function") {
+              continue;
+            }
+            indexedDBRef
+              .databases()
+              .then((databases) => {
+                if (!Array.isArray(databases)) {
+                  return;
+                }
+                databases.forEach((db) => {
+                  const name = db && db.name ? String(db.name) : "";
+                  if (!name) {
+                    return;
+                  }
+                  try {
+                    indexedDBRef.deleteDatabase(name);
+                  } catch (error) {}
+                });
+              })
+              .catch(() => {});
+          } catch (error) {}
+        }
+      }
+
       function maybeSendValue(value) {
         const normalized = String(value || "");
         if (normalized === lastSentValue) {
@@ -119,6 +147,7 @@
 
         if (action === "clear") {
           writeStoredValue(storageName, "");
+          clearIndexedDBCopies();
         } else if (action === "sync" && desiredValue) {
           writeStoredValue(storageName, desiredValue);
         }

@@ -308,7 +308,11 @@ def _sync_cloud_auth_browser_bridge() -> tuple[dict, bool]:
             "refresh_token": str(cloud_auth.get("refresh_token") or ""),
         }
 
-    return sync_cloud_auth_browser_storage(payload, clear=clear_requested)
+    try:
+        return sync_cloud_auth_browser_storage(payload, clear=clear_requested)
+    except Exception:
+        st.session_state["_cloud_browser_storage_last_error"] = "clear_failed" if clear_requested else "sync_failed"
+        return {}, True
 
 
 def _read_device_state_browser_bridge() -> tuple[dict, bool]:
@@ -317,7 +321,11 @@ def _read_device_state_browser_bridge() -> tuple[dict, bool]:
         return {}, True
     if st.session_state.get("_device_browser_restore_checked", False):
         return {}, True
-    return sync_device_state_browser_storage(enabled=False, key="device_state_browser_bridge_read")
+    try:
+        return sync_device_state_browser_storage(enabled=False, key="device_state_browser_bridge_read")
+    except Exception:
+        st.session_state["_device_browser_storage_last_error"] = "read_failed"
+        return {}, True
 
 
 def _restore_device_state_from_browser(browser_payload: dict | None, browser_storage_ready: bool) -> None:
@@ -350,14 +358,20 @@ def _sync_device_state_browser_bridge() -> None:
     device_save_enabled = not (isinstance(settings, dict) and settings.get("device_save_enabled") is False)
 
     if clear_requested or not device_save_enabled:
-        sync_device_state_browser_storage(clear=True, key="device_state_browser_bridge_write")
+        try:
+            sync_device_state_browser_storage(clear=True, key="device_state_browser_bridge_write")
+        except Exception:
+            st.session_state["_device_browser_storage_last_error"] = "clear_failed"
         return
 
-    sync_device_state_browser_storage(
-        export_app_state_payload(),
-        enabled=True,
-        key="device_state_browser_bridge_write",
-    )
+    try:
+        sync_device_state_browser_storage(
+            export_app_state_payload(),
+            enabled=True,
+            key="device_state_browser_bridge_write",
+        )
+    except Exception:
+        st.session_state["_device_browser_storage_last_error"] = "sync_failed"
 
 
 def _restore_cloud_auth_from_cookie(browser_storage_auth: dict | None = None, browser_storage_ready: bool = True) -> None:
@@ -473,6 +487,9 @@ def _sync_cloud_if_logged_in() -> None:
         return
 
     if not bool(settings.get("cloud_sync_enabled", False)):
+        return
+
+    if str(settings.get("cloud_sync_mode", "auto") or "auto") == "manual":
         return
 
     if not cloud_auth.get("logged_in"):
@@ -664,6 +681,29 @@ def _render_native_shell_chrome_guard() -> None:
           });
         })();
         </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_page_loading_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stSpinner"] > div {
+            border-top-color: #1e293b !important;
+        }
+        div[data-testid="stSpinner"] [data-testid="stMarkdownContainer"],
+        div[data-testid="stSpinner"] [data-testid="stMarkdownContainer"] * {
+            color: #64748b !important;
+            font-size: 0.95rem !important;
+            animation: floosyPulse 1.5s infinite ease-in-out;
+        }
+        @keyframes floosyPulse {
+            0%, 100% { opacity: 0.62; }
+            50% { opacity: 1; }
+        }
+        </style>
         """,
         unsafe_allow_html=True,
     )
@@ -875,36 +915,30 @@ def main():
     # اختيار الشهر/السنة (صفحات تحتاجها)
     month_key, month, year = get_month_selection(selected_key)
 
-    # صفحات ما تحتاج شهر
-    if selected_key == "settings":
-        settings_page.render()
-        save_persistent_state()
-        _sync_cloud_if_logged_in()
-        _sync_device_state_browser_bridge()
-        return
+    _render_page_loading_styles()
+    loading_msg = t("جاري تحميل الصفحة...", "Loading page...")
+    with st.spinner(loading_msg):
+        # صفحات ما تحتاج شهر
+        if selected_key == "settings":
+            settings_page.render()
+        elif selected_key == "documents":
+            mustndaty_page.render()
+        else:
+            # باقي الصفحات تحتاج month_key
+            ensure_month_keys(month_key)
 
-    if selected_key == "documents":
-        mustndaty_page.render()
-        save_persistent_state()
-        _sync_cloud_if_logged_in()
-        _sync_device_state_browser_bridge()
-        return
-
-    # باقي الصفحات تحتاج month_key
-    ensure_month_keys(month_key)
-
-    if selected_key == "home":
-        dashboard_page.render(month_key, month, year)
-    elif selected_key == "account":
-        account_page.render(month_key, month, year)
-    elif selected_key == "savings":
-        savings_page.render(month_key, month, year)
-    elif selected_key == "assistant":
-        assistant_page.render(month_key, month, year)
-    elif selected_key == "tax":
-        tax_page.render(month_key, month, year)
-    elif selected_key == "project":
-        project_page.render(month_key, month, year)
+            if selected_key == "home":
+                dashboard_page.render(month_key, month, year)
+            elif selected_key == "account":
+                account_page.render(month_key, month, year)
+            elif selected_key == "savings":
+                savings_page.render(month_key, month, year)
+            elif selected_key == "assistant":
+                assistant_page.render(month_key, month, year)
+            elif selected_key == "tax":
+                tax_page.render(month_key, month, year)
+            elif selected_key == "project":
+                project_page.render(month_key, month, year)
 
     save_persistent_state()
     _sync_cloud_if_logged_in()
