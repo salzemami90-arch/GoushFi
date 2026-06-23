@@ -32,6 +32,42 @@ class _RefreshClient:
         return self.result
 
 
+class _SignOutClient:
+    def __init__(self):
+        self.seen_access_token = ""
+
+    def sign_out(self, access_token):
+        self.seen_access_token = access_token
+        return {"ok": True}
+
+
+class _FreshStartClient:
+    is_configured = True
+
+    def __init__(self, delete_result):
+        self.delete_result = delete_result
+        self.seen_refresh_token = ""
+        self.deleted = []
+        self.signed_out = []
+
+    def refresh_session(self, refresh_token):
+        self.seen_refresh_token = refresh_token
+        return {
+            "ok": True,
+            "access_token": "fresh-access",
+            "refresh_token": "fresh-refresh",
+            "user": {"id": "user-old", "email": "old@example.com"},
+        }
+
+    def delete_user_data(self, user_id, access_token):
+        self.deleted.append({"user_id": user_id, "access_token": access_token})
+        return self.delete_result
+
+    def sign_out(self, access_token):
+        self.signed_out.append(access_token)
+        return {"ok": True}
+
+
 def test_manual_cloud_action_refreshes_expired_access_token(monkeypatch):
     fake_st = _FakeSt()
     remembered = {}
@@ -79,6 +115,95 @@ def test_manual_cloud_action_reports_refresh_failure(monkeypatch):
     assert cloud_auth["access_token"] == "old-access"
     assert error == "JWT expired"
     assert fake_st.session_state["_cloud_sync_last_error"] == "token_refresh_failed"
+
+
+def test_cloud_sign_out_clears_local_auth_and_browser_storage(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["app_scope"] = {"owner_user_id": "user-old", "owner_email": "old@example.com"}
+    fake_st.session_state[READY_USER_KEY] = "user-old"
+    fake_st.session_state[PAUSE_REASON_KEY] = "some_reason"
+    cleared = {}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(
+        settings_page,
+        "clear_cloud_auth_cookie",
+        lambda reload_after_write=False: cleared.update({"reload_after_write": reload_after_write}),
+    )
+    client = _SignOutClient()
+
+    settings_page._sign_out_cloud_session(client)
+
+    assert client.seen_access_token == "old-access"
+    assert fake_st.session_state["cloud_auth"]["logged_in"] is False
+    assert fake_st.session_state["_cloud_remember_login"] is False
+    assert fake_st.session_state["_cloud_cookie_restore_checked"] is True
+    assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
+    assert fake_st.session_state["app_scope"] == {"owner_user_id": "", "owner_email": ""}
+    assert fake_st.session_state[READY_USER_KEY] == ""
+    assert fake_st.session_state[PAUSE_REASON_KEY] == ""
+    assert cleared == {"reload_after_write": True}
+
+
+def test_fresh_start_deletes_cloud_then_clears_local_and_signs_out(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings"] = {"cloud_sync_enabled": True}
+    fake_st.session_state["transactions"] = {"2026-06": [{"amount": 229}]}
+    fake_st.session_state["app_scope"] = {"owner_user_id": "user-old", "owner_email": "old@example.com"}
+    cleared = {}
+    reset = {"called": False}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(settings_page, "remember_cloud_auth", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        settings_page,
+        "clear_cloud_auth_cookie",
+        lambda reload_after_write=False: cleared.update({"reload_after_write": reload_after_write}),
+    )
+
+    def fake_reset_local_app_data():
+        reset["called"] = True
+        fake_st.session_state["settings"] = {"cloud_sync_enabled": False}
+        fake_st.session_state["transactions"] = {}
+        fake_st.session_state["app_scope"] = {"owner_user_id": "", "owner_email": ""}
+
+    monkeypatch.setattr(settings_page, "reset_local_app_data", fake_reset_local_app_data)
+    client = _FreshStartClient({"ok": True})
+
+    ok, error = settings_page._fresh_start_app_data(client)
+
+    assert ok is True
+    assert error == ""
+    assert client.seen_refresh_token == "old-refresh"
+    assert client.deleted == [{"user_id": "user-old", "access_token": "fresh-access"}]
+    assert client.signed_out == ["fresh-access"]
+    assert reset["called"] is True
+    assert fake_st.session_state["transactions"] == {}
+    assert fake_st.session_state["cloud_auth"]["logged_in"] is False
+    assert fake_st.session_state["_device_browser_storage_clear_requested"] is True
+    assert fake_st.session_state["_cloud_browser_storage_clear_requested"] is True
+    assert fake_st.session_state["_cloud_remember_login"] is False
+    assert cleared == {"reload_after_write": True}
+
+
+def test_fresh_start_keeps_local_data_when_cloud_delete_fails(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state["settings"] = {"cloud_sync_enabled": True}
+    fake_st.session_state["transactions"] = {"2026-06": [{"amount": 229}]}
+    reset = {"called": False}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(cloud_state_helpers, "st", fake_st)
+    monkeypatch.setattr(settings_page, "remember_cloud_auth", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings_page, "reset_local_app_data", lambda: reset.update({"called": True}))
+    client = _FreshStartClient({"ok": False, "error": "delete failed"})
+
+    ok, error = settings_page._fresh_start_app_data(client)
+
+    assert ok is False
+    assert error == "delete failed"
+    assert reset["called"] is False
+    assert fake_st.session_state["transactions"] == {"2026-06": [{"amount": 229}]}
+    assert fake_st.session_state["cloud_auth"]["logged_in"] is True
 
 
 class _InitialCloudCopyClient:

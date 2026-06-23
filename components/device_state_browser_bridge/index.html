@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Device State Browser Bridge</title>
+  </head>
+  <body>
+    <script>
+      const COMPONENT_READY = "streamlit:componentReady";
+      const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
+      const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+      const RENDER = "streamlit:render";
+
+      const Streamlit = {
+        componentReady() {
+          window.parent.postMessage(
+            { isStreamlitMessage: true, type: COMPONENT_READY, apiVersion: 1 },
+            "*",
+          );
+        },
+        setComponentValue(value) {
+          window.parent.postMessage(
+            { isStreamlitMessage: true, type: SET_COMPONENT_VALUE, value },
+            "*",
+          );
+        },
+        setFrameHeight(height = 0) {
+          window.parent.postMessage(
+            { isStreamlitMessage: true, type: SET_FRAME_HEIGHT, height },
+            "*",
+          );
+        },
+      };
+
+      let lastSentValue = null;
+
+      function collectWindows() {
+        const wins = [];
+        let current = window;
+        while (current) {
+          if (!wins.includes(current)) {
+            wins.push(current);
+          }
+          let nextWin = null;
+          try {
+            nextWin = current.parent && current.parent !== current ? current.parent : null;
+          } catch (error) {
+            nextWin = null;
+          }
+          if (!nextWin) break;
+          current = nextWin;
+        }
+        try {
+          if (window.top && !wins.includes(window.top)) {
+            wins.push(window.top);
+          }
+        } catch (error) {}
+        return wins;
+      }
+
+      function collectStorages() {
+        return Array.from(
+          new Set(
+            collectWindows()
+              .map((win) => {
+                try {
+                  return win && win.localStorage ? win.localStorage : null;
+                } catch (error) {
+                  return null;
+                }
+              })
+              .filter(Boolean),
+          ),
+        );
+      }
+
+      function readStoredValue(storageName) {
+        for (const storage of collectStorages()) {
+          try {
+            const value = String(storage.getItem(storageName) || "").trim();
+            if (value) {
+              return value;
+            }
+          } catch (error) {}
+        }
+        return "";
+      }
+
+      function writeStoredValue(storageName, value) {
+        for (const storage of collectStorages()) {
+          try {
+            if (value) {
+              storage.setItem(storageName, value);
+            } else {
+              storage.removeItem(storageName);
+            }
+          } catch (error) {}
+        }
+      }
+
+      function maybeSendValue(value) {
+        const normalized = String(value || "");
+        if (normalized === lastSentValue) {
+          return;
+        }
+        lastSentValue = normalized;
+        Streamlit.setComponentValue(normalized);
+      }
+
+      window.addEventListener("message", (event) => {
+        if (!event.data || event.data.type !== RENDER) {
+          return;
+        }
+
+        const args = event.data.args || {};
+        const storageName = String(args.storageName || "goushfi_device_state_storage");
+        const desiredValue = String(args.value || "");
+        const action = String(args.action || "read");
+
+        if (action === "clear") {
+          writeStoredValue(storageName, "");
+        } else if (action === "sync" && desiredValue) {
+          writeStoredValue(storageName, desiredValue);
+        }
+
+        maybeSendValue(readStoredValue(storageName));
+        Streamlit.setFrameHeight(0);
+      });
+
+      Streamlit.componentReady();
+      Streamlit.setFrameHeight(0);
+    </script>
+  </body>
+</html>

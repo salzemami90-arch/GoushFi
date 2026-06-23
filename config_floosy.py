@@ -1474,8 +1474,7 @@ def get_builtin_logo_b64() -> str:
         logo_path = os.path.join(os.path.dirname(__file__), "goushfi_logo.png")
         with open(logo_path, "rb") as f:
             raw = f.read()
-        processed = _builtin_logo_data_uri_with_dark_matte_removed(raw)
-        _BUILTIN_LOGO_DATA_URI = processed if processed else _builtin_logo_raw_data_uri(raw)
+        _BUILTIN_LOGO_DATA_URI = _builtin_logo_raw_data_uri(raw)
     return _BUILTIN_LOGO_DATA_URI
 
 

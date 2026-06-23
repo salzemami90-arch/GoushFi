@@ -12,6 +12,7 @@ from config_floosy import (
     import_app_state_payload,
     init_session_state,
     _is_native_shell_runtime,
+    _local_persistence_enabled,
     save_persistent_state,
     clear_regular_web_page_query_param,
 )
@@ -32,10 +33,13 @@ from services.cloud_state_helpers import (
 from services.cloud_sync_guard import (
     cloud_sync_ready_for_user,
     mark_cloud_sync_ready,
+    payload_has_meaningful_data,
     payload_snapshot,
     pause_cloud_auto_sync,
     should_keep_local_data_before_auto_import,
+    should_auto_create_cloud_copy_after_empty_remote,
 )
+from services.device_state_storage import sync_device_state_browser_storage
 from services.i18n import make_t, get_lang_code, is_rtl as _is_rtl
 from services.oauth_pkce import (
     forget_pkce_flow,
@@ -307,6 +311,55 @@ def _sync_cloud_auth_browser_bridge() -> tuple[dict, bool]:
     return sync_cloud_auth_browser_storage(payload, clear=clear_requested)
 
 
+def _read_device_state_browser_bridge() -> tuple[dict, bool]:
+    if _local_persistence_enabled():
+        st.session_state["_device_browser_restore_checked"] = True
+        return {}, True
+    if st.session_state.get("_device_browser_restore_checked", False):
+        return {}, True
+    return sync_device_state_browser_storage(enabled=False, key="device_state_browser_bridge_read")
+
+
+def _restore_device_state_from_browser(browser_payload: dict | None, browser_storage_ready: bool) -> None:
+    if st.session_state.get("_device_browser_restore_checked", False):
+        return
+    if not browser_storage_ready:
+        return
+
+    st.session_state["_device_browser_restore_checked"] = True
+    if not isinstance(browser_payload, dict) or not browser_payload:
+        return
+
+    current_payload = export_app_state_payload()
+    if payload_has_meaningful_data(current_payload):
+        return
+
+    import_app_state_payload(browser_payload)
+    st.session_state["_persist_loaded"] = True
+    st.rerun()
+
+
+def _sync_device_state_browser_bridge() -> None:
+    if _local_persistence_enabled():
+        return
+    if not st.session_state.get("_device_browser_restore_checked", False):
+        return
+
+    clear_requested = bool(st.session_state.pop("_device_browser_storage_clear_requested", False))
+    settings = st.session_state.get("settings", {})
+    device_save_enabled = not (isinstance(settings, dict) and settings.get("device_save_enabled") is False)
+
+    if clear_requested or not device_save_enabled:
+        sync_device_state_browser_storage(clear=True, key="device_state_browser_bridge_write")
+        return
+
+    sync_device_state_browser_storage(
+        export_app_state_payload(),
+        enabled=True,
+        key="device_state_browser_bridge_write",
+    )
+
+
 def _restore_cloud_auth_from_cookie(browser_storage_auth: dict | None = None, browser_storage_ready: bool = True) -> None:
     if st.session_state.get("_cloud_cookie_restore_checked", False):
         return
@@ -430,9 +483,6 @@ def _sync_cloud_if_logged_in() -> None:
     if not user_id or not access_token:
         return
 
-    if not cloud_sync_ready_for_user(st.session_state, user_id):
-        return
-
     app_scope = st.session_state.get("app_scope", {})
     owner_user_id = ""
     if isinstance(app_scope, dict):
@@ -468,6 +518,10 @@ def _sync_cloud_if_logged_in() -> None:
                     return
 
     payload = export_app_state_payload()
+    if not cloud_sync_ready_for_user(st.session_state, user_id):
+        if not should_auto_create_cloud_copy_after_empty_remote(st.session_state, payload):
+            return
+
     try:
         snapshot = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     except Exception:
@@ -653,6 +707,8 @@ def main():
 
     # تهيئة عامة (session_state + css إن كانت داخل config_floosy)
     init_session_state()
+    device_storage_payload, device_storage_ready = _read_device_state_browser_bridge()
+    _restore_device_state_from_browser(device_storage_payload, device_storage_ready)
     _handle_cloud_oauth_code_callback()
     render_cloud_oauth_hash_capture_inline()
     render_cloud_oauth_callback_capture()
@@ -824,12 +880,14 @@ def main():
         settings_page.render()
         save_persistent_state()
         _sync_cloud_if_logged_in()
+        _sync_device_state_browser_bridge()
         return
 
     if selected_key == "documents":
         mustndaty_page.render()
         save_persistent_state()
         _sync_cloud_if_logged_in()
+        _sync_device_state_browser_bridge()
         return
 
     # باقي الصفحات تحتاج month_key
@@ -850,6 +908,7 @@ def main():
 
     save_persistent_state()
     _sync_cloud_if_logged_in()
+    _sync_device_state_browser_bridge()
 
 
 # Streamlit runs top-to-bottom, so call main() directly.

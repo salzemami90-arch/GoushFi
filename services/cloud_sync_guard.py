@@ -5,6 +5,7 @@ import json
 
 READY_USER_KEY = "_cloud_sync_ready_user"
 PAUSE_REASON_KEY = "_cloud_sync_pause_reason"
+EMPTY_REMOTE_REASONS = {"cloud_empty_after_sign_in", "cloud_empty_after_cookie_restore"}
 
 
 def mark_cloud_sync_ready(session_state, user_id: str) -> None:
@@ -73,6 +74,11 @@ def payload_has_meaningful_data(payload) -> bool:
         return True
 
     return False
+
+
+def should_auto_create_cloud_copy_after_empty_remote(session_state, payload) -> bool:
+    reason = cloud_sync_pause_reason(session_state)
+    return reason in EMPTY_REMOTE_REASONS and payload_has_meaningful_data(payload)
 
 
 def should_keep_local_data_before_auto_import(local_payload, remote_payload) -> bool:

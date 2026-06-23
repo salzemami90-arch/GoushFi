@@ -501,9 +501,9 @@ def remember_cloud_auth(email: str, user_id: str, refresh_token: str, *, reload_
     _render_cookie_script(value, COOKIE_MAX_AGE_SECONDS, reload_after_write=reload_after_write)
 
 
-def clear_cloud_auth_cookie() -> None:
+def clear_cloud_auth_cookie(*, reload_after_write: bool = False) -> None:
     _clear_local_auth_backup()
-    _render_cookie_script("", 0)
+    _render_cookie_script("", 0, reload_after_write=reload_after_write)
 
 
 def bootstrap_cloud_auth_from_storage() -> None:

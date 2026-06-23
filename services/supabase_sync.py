@@ -71,9 +71,17 @@ def _runtime_section(source: Any, *keys: str) -> Any:
 
 
 class SupabaseSyncClient:
-    def __init__(self, supabase_url: str, anon_key: str, table_name: str = "user_app_data", timeout_sec: int = 15):
+    def __init__(
+        self,
+        supabase_url: str,
+        anon_key: str,
+        table_name: str = "user_app_data",
+        timeout_sec: int = 15,
+        service_role_key: str = "",
+    ):
         self.supabase_url = (supabase_url or "").strip().rstrip("/")
         self.anon_key = (anon_key or "").strip()
+        self.service_role_key = (service_role_key or "").strip()
         self.table_name = table_name
         self.timeout_sec = timeout_sec
 
@@ -81,6 +89,7 @@ class SupabaseSyncClient:
     def from_runtime(cls, secrets: Any = None) -> "SupabaseSyncClient":
         secret_url = ""
         secret_key = ""
+        secret_service_role_key = ""
         secret_table_name = ""
 
         if secrets is not None:
@@ -112,6 +121,14 @@ class SupabaseSyncClient:
                         "anon_key",
                         "api_key",
                     )
+                if not secret_service_role_key:
+                    secret_service_role_key = _runtime_value(
+                        source,
+                        "SUPABASE_SERVICE_ROLE_KEY",
+                        "supabase_service_role_key",
+                        "service_role_key",
+                        "service_role",
+                    )
                 if not secret_table_name:
                     secret_table_name = _runtime_value(
                         source,
@@ -124,12 +141,17 @@ class SupabaseSyncClient:
 
         url = secret_url or os.getenv("SUPABASE_URL", "")
         key = secret_key or os.getenv("SUPABASE_ANON_KEY", "")
+        service_role_key = secret_service_role_key or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
         table_name = secret_table_name or os.getenv("SUPABASE_DATA_TABLE", "user_app_data")
-        return cls(url, key, table_name=table_name)
+        return cls(url, key, table_name=table_name, service_role_key=service_role_key)
 
     @property
     def is_configured(self) -> bool:
         return bool(self.supabase_url and self.anon_key)
+
+    @property
+    def can_delete_auth_users(self) -> bool:
+        return bool(self.supabase_url and self.service_role_key)
 
     def build_oauth_authorize_url(
         self,
@@ -182,6 +204,13 @@ class SupabaseSyncClient:
         if prefer:
             headers["Prefer"] = prefer
         return headers
+
+    def _service_role_headers(self) -> dict[str, str]:
+        return {
+            "apikey": self.service_role_key,
+            "Authorization": f"Bearer {self.service_role_key}",
+            "Content-Type": "application/json",
+        }
 
     @staticmethod
     def _json_or_text(resp: requests.Response) -> Any:
@@ -316,6 +345,27 @@ class SupabaseSyncClient:
             "refresh_token": data.get("refresh_token") if isinstance(data, dict) else None,
             "raw": data,
         }
+
+    def sign_out(self, access_token: str) -> dict[str, Any]:
+        if not self.is_configured:
+            return {"ok": False, "error": "Supabase config is missing."}
+
+        clean_access_token = str(access_token or "").strip()
+        if not clean_access_token:
+            return {"ok": False, "error": "Missing access token."}
+
+        url = f"{self.supabase_url}/auth/v1/logout"
+        try:
+            resp = requests.post(url, headers=self._headers(access_token=clean_access_token), timeout=self.timeout_sec)
+        except Exception as exc:
+            return {"ok": False, "error": f"Network error: {exc}"}
+
+        data = self._json_or_text(resp)
+        if resp.status_code >= 400:
+            message = self._friendly_error(resp, data, ("msg", "error_description", "error"))
+            return {"ok": False, "error": message}
+
+        return {"ok": True, "raw": data}
 
     def exchange_pkce_code(self, auth_code: str, code_verifier: str) -> dict[str, Any]:
         if not self.is_configured:
@@ -460,19 +510,24 @@ class SupabaseSyncClient:
         return {"ok": True, "raw": data}
 
 
-    def delete_current_user(self, access_token: str) -> dict[str, Any]:
-        if not self.is_configured:
+    def delete_current_user(self, user_id: str) -> dict[str, Any]:
+        if not self.supabase_url:
             return {"ok": False, "error": "Supabase config is missing."}
 
-        if not access_token:
-            return {"ok": False, "error": "Missing access token."}
+        if not self.service_role_key:
+            return {"ok": False, "error": "account_delete_requires_service_role"}
 
-        url = f"{self.supabase_url}/auth/v1/user"
+        clean_user_id = str(user_id or "").strip()
+        if not clean_user_id:
+            return {"ok": False, "error": "Missing user_id."}
+
+        user_filter = quote(clean_user_id, safe="")
+        url = f"{self.supabase_url}/auth/v1/admin/users/{user_filter}"
 
         try:
             resp = requests.delete(
                 url,
-                headers=self._headers(access_token=access_token),
+                headers=self._service_role_headers(),
                 timeout=self.timeout_sec,
             )
         except Exception as exc:

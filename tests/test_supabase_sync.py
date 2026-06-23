@@ -11,12 +11,14 @@ class SupabaseSyncClientConfigTests(unittest.TestCase):
             {
                 "SUPABASE_URL": "https://example.supabase.co",
                 "SUPABASE_ANON_KEY": "anon-key",
+                "SUPABASE_SERVICE_ROLE_KEY": "service-role-key",
                 "SUPABASE_DATA_TABLE": "custom_table",
             }
         )
 
         self.assertEqual(client.supabase_url, "https://example.supabase.co")
         self.assertEqual(client.anon_key, "anon-key")
+        self.assertEqual(client.service_role_key, "service-role-key")
         self.assertEqual(client.table_name, "custom_table")
 
     def test_from_runtime_reads_nested_supabase_section(self):
@@ -25,6 +27,7 @@ class SupabaseSyncClientConfigTests(unittest.TestCase):
                 "supabase": {
                     "url": "https://nested.supabase.co",
                     "anon_key": "nested-anon-key",
+                    "service_role_key": "nested-service-role-key",
                     "table_name": "nested_table",
                 }
             }
@@ -32,6 +35,7 @@ class SupabaseSyncClientConfigTests(unittest.TestCase):
 
         self.assertEqual(client.supabase_url, "https://nested.supabase.co")
         self.assertEqual(client.anon_key, "nested-anon-key")
+        self.assertEqual(client.service_role_key, "nested-service-role-key")
         self.assertEqual(client.table_name, "nested_table")
 
     def test_from_runtime_reads_connections_supabase_section(self):

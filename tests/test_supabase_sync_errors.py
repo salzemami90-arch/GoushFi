@@ -93,3 +93,73 @@ def test_refresh_session_uses_refresh_token_endpoint(monkeypatch):
     assert captured["json"] == {"refresh_token": "old-refresh"}
     assert captured["headers"]["apikey"] == "anon-key"
     assert captured["timeout"] == 7
+
+
+def test_sign_out_uses_logout_endpoint_with_bearer_token(monkeypatch):
+    captured = {}
+
+    class LogoutResponse:
+        status_code = 204
+
+        @staticmethod
+        def json():
+            return {}
+
+    def fake_post(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return LogoutResponse()
+
+    monkeypatch.setattr("services.supabase_sync.requests.post", fake_post)
+
+    client = SupabaseSyncClient("https://example.supabase.co", "anon-key", timeout_sec=7)
+    result = client.sign_out("access-token")
+
+    assert result["ok"] is True
+    assert captured["url"] == "https://example.supabase.co/auth/v1/logout"
+    assert captured["headers"]["apikey"] == "anon-key"
+    assert captured["headers"]["Authorization"] == "Bearer access-token"
+    assert captured["timeout"] == 7
+
+
+def test_delete_current_user_requires_service_role():
+    client = SupabaseSyncClient("https://example.supabase.co", "anon-key", timeout_sec=7)
+
+    result = client.delete_current_user("user-1")
+
+    assert result["ok"] is False
+    assert result["error"] == "account_delete_requires_service_role"
+
+
+def test_delete_current_user_uses_admin_endpoint_with_service_role(monkeypatch):
+    captured = {}
+
+    class DeleteUserResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {}
+
+    def fake_delete(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return DeleteUserResponse()
+
+    monkeypatch.setattr("services.supabase_sync.requests.delete", fake_delete)
+
+    client = SupabaseSyncClient(
+        "https://example.supabase.co",
+        "anon-key",
+        timeout_sec=7,
+        service_role_key="service-role-key",
+    )
+    result = client.delete_current_user("user-1")
+
+    assert result["ok"] is True
+    assert captured["url"] == "https://example.supabase.co/auth/v1/admin/users/user-1"
+    assert captured["headers"]["apikey"] == "service-role-key"
+    assert captured["headers"]["Authorization"] == "Bearer service-role-key"
+    assert captured["timeout"] == 7

@@ -32,6 +32,7 @@ from services.cloud_sync_guard import (
     pause_cloud_auto_sync,
     should_keep_local_data_before_auto_import,
 )
+from services.device_state_storage import browser_device_storage_available
 from services.oauth_pkce import get_or_create_pkce_flow, render_pkce_cookie
 from services.supabase_sync import SupabaseSyncClient
 
@@ -104,6 +105,62 @@ def _refresh_cloud_auth_for_manual_action(client: SupabaseSyncClient) -> tuple[d
     if st.session_state.get("_cloud_remember_login") is not False:
         remember_cloud_auth(email, user_id, new_refresh_token)
     return st.session_state.get("cloud_auth", {}), ""
+
+
+def _sign_out_cloud_session(client: SupabaseSyncClient | None = None) -> None:
+    cloud_auth = st.session_state.get("cloud_auth", {})
+    access_token = ""
+    if isinstance(cloud_auth, dict):
+        access_token = str(cloud_auth.get("access_token") or "").strip()
+
+    if client is not None and access_token:
+        client.sign_out(access_token)
+
+    _set_cloud_auth(False)
+    _set_scope_owner("", "")
+    st.session_state["_cloud_remember_login"] = False
+    st.session_state["_cloud_cookie_restore_checked"] = True
+    st.session_state["_cloud_browser_storage_clear_requested"] = True
+    st.session_state["_cloud_last_snapshot"] = ""
+    st.session_state["_cloud_last_pull_user"] = ""
+    st.session_state["_cloud_sync_last_error"] = ""
+    clear_cloud_sync_guard(st.session_state)
+    clear_cloud_auth_cookie(reload_after_write=True)
+
+
+def _fresh_start_app_data(client: SupabaseSyncClient | None = None) -> tuple[bool, str]:
+    cloud_auth = st.session_state.get("cloud_auth", {})
+    logged_in = bool(isinstance(cloud_auth, dict) and cloud_auth.get("logged_in") and cloud_auth.get("access_token"))
+
+    if logged_in and client is not None and client.is_configured:
+        cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
+        if refresh_error:
+            return False, str(refresh_error)
+
+        delete_res = client.delete_user_data(
+            str(cloud_auth.get("user_id") or ""),
+            str(cloud_auth.get("access_token") or ""),
+        )
+        if not delete_res.get("ok"):
+            return False, str(delete_res.get("error") or "cloud_delete_failed")
+
+    if logged_in:
+        _sign_out_cloud_session(client)
+    else:
+        _set_cloud_auth(False)
+        _set_scope_owner("", "")
+        st.session_state["_cloud_remember_login"] = False
+        st.session_state["_cloud_cookie_restore_checked"] = True
+        st.session_state["_cloud_browser_storage_clear_requested"] = True
+        clear_cloud_auth_cookie(reload_after_write=True)
+
+    reset_local_app_data()
+    st.session_state["_device_browser_storage_clear_requested"] = True
+    st.session_state["_cloud_browser_storage_clear_requested"] = True
+    st.session_state["_cloud_cookie_restore_checked"] = True
+    st.session_state["_cloud_remember_login"] = False
+    clear_cloud_sync_guard(st.session_state)
+    return True, ""
 
 
 def _sync_snapshot_from_state() -> None:
@@ -275,33 +332,33 @@ def _cloud_oauth_redirect_url(lang_code: str, pkce_state: str = "") -> str:
 def _render_same_tab_oauth_button(label: str, url: str) -> None:
     safe_label = html.escape(str(label or ""))
     safe_url = html.escape(str(url or ""), quote=True)
+    button_style = html.escape(
+        "display:flex;align-items:center;justify-content:center;width:100%;"
+        "min-height:2.55rem;padding:0.45rem 0.85rem;margin:0.15rem 0 0.45rem 0;"
+        "border:1px solid #ff4b4b;border-radius:0.5rem;background:white;color:#4b587c;"
+        "font-weight:600;text-decoration:none;box-sizing:border-box;",
+        quote=True,
+    )
     st.markdown(
-        f"""
-        <style>
-        .goushfi-oauth-apple-button {{
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            min-height: 2.55rem;
-            padding: 0.45rem 0.85rem;
-            border: 1px solid #ff4b4b;
-            border-radius: 0.5rem;
-            background: #ffffff;
-            color: #4b587c !important;
-            font-weight: 600;
-            text-decoration: none !important;
-            box-sizing: border-box;
-        }}
-        .goushfi-oauth-apple-button:hover {{
-            border-color: #e03e3e;
-            background: #fff7f7;
-            color: #1f2a44 !important;
-            text-decoration: none !important;
-        }}
-        </style>
-        <a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self">{safe_label}</a>
-        """,
+        f'<a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self" style="{button_style}">'
+        f"{safe_label}</a>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_disabled_oauth_button(label: str) -> None:
+    safe_label = html.escape(str(label or ""))
+    button_style = html.escape(
+        "display:flex;align-items:center;justify-content:center;width:100%;"
+        "min-height:2.55rem;padding:0.45rem 0.85rem;"
+        "margin:0.15rem 0 0.45rem 0;border:1px solid rgba(148,163,184,0.55);"
+        "border-radius:0.5rem;background:rgba(248,250,252,0.86);color:rgba(75,88,124,0.62);"
+        "font-weight:600;text-decoration:none;box-sizing:border-box;cursor:not-allowed;",
+        quote=True,
+    )
+    st.markdown(
+        f'<div class="goushfi-oauth-apple-button-disabled" aria-disabled="true" style="{button_style}">'
+        f"{safe_label}</div>",
         unsafe_allow_html=True,
     )
 
@@ -335,10 +392,7 @@ def _render_same_tab_oauth_redirect(label: str, url: str) -> None:
         height=0,
     )
     st.caption("Opening Apple sign-in...")
-    st.markdown(
-        f'<a class="goushfi-oauth-apple-button" href="{safe_url}" target="_self">{safe_label}</a>',
-        unsafe_allow_html=True,
-    )
+    _render_same_tab_oauth_button(label, clean_url)
 
 
 def _create_initial_cloud_copy_after_sign_up(
@@ -417,8 +471,8 @@ def _render_cloud_sync_pause_notice(t) -> None:
     elif reason in {"cloud_empty_after_sign_in", "cloud_empty_after_cookie_restore"}:
         st.info(
             t(
-                "لا توجد نسخة سحابية محفوظة لهذا الحساب حتى الآن. بيانات هذا الجهاز بقيت كما هي، وإذا رغبت في إنشاء نسخة سحابية استخدم رفع للسحابة.",
-                "No cloud copy exists for this account yet. This device kept its current local data. If you want to create a cloud copy, use Upload to Cloud.",
+                "لا توجد نسخة سحابية محفوظة لهذا الحساب حتى الآن. أضف أول عملية وسيُنشئ GoushFi النسخة السحابية تلقائيًا. ويمكنك أيضًا استخدام رفع للسحابة بعد إضافة بيانات.",
+                "No cloud copy exists for this account yet. Add your first transaction and GoushFi will create the cloud copy automatically. You can also use Upload to Cloud after adding data.",
             )
         )
     elif reason in {"pull_failed_after_sign_in", "pull_failed_after_cookie_restore"}:
@@ -785,7 +839,7 @@ def render():
     cloud_client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
     cloud_auth = st.session_state.get("cloud_auth", {})
     cloud_logged_in = bool(cloud_auth.get("logged_in")) and bool(cloud_auth.get("access_token"))
-    device_save_available = bool(_local_persistence_enabled())
+    device_save_available = bool(_local_persistence_enabled() or browser_device_storage_available())
     device_save_enabled = bool(settings.get("device_save_enabled", True)) and device_save_available
     if not device_save_available:
         device_storage_line = t(
@@ -1100,6 +1154,7 @@ def render():
                     st.success(t("تم تفعيل حفظ نسخة على هذا الجهاز.", "Device save is now on."))
                 else:
                     delete_local_persistent_copy()
+                    st.session_state["_device_browser_storage_clear_requested"] = True
                     st.warning(
                         t(
                             "تم إيقاف حفظ الجهاز وحذف النسخة المحلية المحفوظة. بيانات الجلسة الحالية ما زالت مفتوحة الآن.",
@@ -1140,13 +1195,9 @@ def render():
                 )
                 if bool(cloud_auth.get("logged_in")) and bool(cloud_auth.get("access_token")):
                     if st.button(t("تسجيل خروج من السحابة", "Sign Out from Cloud"), key="cloud_signout_disabled_btn"):
-                        _set_cloud_auth(False)
-                        st.session_state["_cloud_remember_login"] = False
-                        clear_cloud_auth_cookie()
-                        st.session_state["_cloud_browser_storage_clear_requested"] = True
-                        st.session_state["_cloud_last_pull_user"] = ""
+                        _sign_out_cloud_session(SupabaseSyncClient.from_runtime(getattr(st, "secrets", None)))
                         st.success(t("تم تسجيل الخروج.", "Signed out."))
-                        st.rerun()
+                        st.stop()
             else:
                 client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
 
@@ -1268,14 +1319,9 @@ def render():
                         r2c1, r2c2 = st.columns(2)
                         with r2c1:
                             if st.button(t("تسجيل خروج من السحابة", "Sign Out from Cloud"), use_container_width=True, key="cloud_signout_btn"):
-                                _set_cloud_auth(False)
-                                st.session_state["_cloud_remember_login"] = False
-                                clear_cloud_auth_cookie()
-                                st.session_state["_cloud_browser_storage_clear_requested"] = True
-                                st.session_state["_cloud_last_pull_user"] = ""
-                                clear_cloud_sync_guard(st.session_state)
+                                _sign_out_cloud_session(client)
                                 st.success(t("تم تسجيل الخروج.", "Signed out."))
-                                st.rerun()
+                                st.stop()
 
                         with r2c2:
                             delete_confirm = st.checkbox(
@@ -1324,70 +1370,71 @@ def render():
 
                         st.divider()
                         st.caption(f"⚠️ **{t('منطقة حساسة', 'Danger Zone')}**")
-                        st.warning(
-                            t(
-                                "حذف الحساب بالكامل نهائي ويشمل حساب السحابة وبياناته.",
-                                "Permanent account deletion removes your cloud account and cloud data.",
+                        if not client.can_delete_auth_users:
+                            st.info(
+                                t(
+                                    "حذف حساب تسجيل الدخول نهائيًا يحتاج إعداد مفتاح آمن على السيرفر. لحذف بيانات التطبيق فقط، استخدم حذف النسخة السحابية ومسح بيانات الجهاز.",
+                                    "Permanent sign-in account deletion requires a secure server key. To clear app data only, use Delete Cloud Copy and Clear This Device Data.",
+                                )
                             )
-                        )
-
-                        delete_account_confirm = st.checkbox(
-                            t("أفهم أن حذف الحساب نهائي", "I understand account deletion is permanent"),
-                            key="cloud_delete_account_confirm",
-                        )
-
-                        if st.button(
-                            t("حذف الحساب بالكامل", "Delete Account Permanently"),
-                            use_container_width=True,
-                            key="cloud_delete_account_btn",
-                            disabled=not delete_account_confirm,
-                        ):
-                            cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
-                            if refresh_error:
-                                cloud_error = _cloud_error_text(refresh_error, t)
-                                st.error(t(f"تعذر تحديث الجلسة: {cloud_error}", f"Could not refresh session: {cloud_error}"))
-                                st.stop()
-                            data_delete_res = client.delete_user_data(
-                                cloud_auth.get("user_id", ""),
-                                cloud_auth.get("access_token", ""),
+                        else:
+                            st.warning(
+                                t(
+                                    "حذف الحساب بالكامل نهائي ويشمل حساب السحابة وبياناته.",
+                                    "Permanent account deletion removes your cloud account and cloud data.",
+                                )
                             )
-                            account_delete_res = client.delete_current_user(cloud_auth.get("access_token", ""))
 
-                            if account_delete_res.get("ok"):
-                                _set_cloud_auth(False)
-                                st.session_state["_cloud_remember_login"] = False
-                                clear_cloud_auth_cookie()
-                                st.session_state["_cloud_browser_storage_clear_requested"] = True
-                                _set_scope_owner("", "")
-                                st.session_state["_cloud_last_snapshot"] = ""
-                                st.session_state["_cloud_last_pull_user"] = ""
-                                clear_cloud_sync_guard(st.session_state)
-                                st.success(
-                                    t(
-                                        "تم حذف الحساب السحابي بالكامل.",
-                                        "Cloud account deleted permanently.",
-                                    )
-                                )
-                                st.rerun()
+                            delete_account_confirm = st.checkbox(
+                                t("أفهم أن حذف الحساب نهائي", "I understand account deletion is permanent"),
+                                key="cloud_delete_account_confirm",
+                            )
 
-                            account_error = str(account_delete_res.get("error", ""))
-                            data_error = str(data_delete_res.get("error", ""))
-                            account_error_display = _cloud_error_text(account_error, t)
-                            data_error_display = _cloud_error_text(data_error, t)
-                            if data_delete_res.get("ok"):
-                                st.warning(
-                                    t(
-                                        f"تم حذف البيانات السحابية لكن حذف الحساب فشل: {account_error_display}",
-                                        f"Cloud data deleted, but account deletion failed: {account_error_display}",
-                                    )
+                            if st.button(
+                                t("حذف الحساب بالكامل", "Delete Account Permanently"),
+                                use_container_width=True,
+                                key="cloud_delete_account_btn",
+                                disabled=not delete_account_confirm,
+                            ):
+                                cloud_auth, refresh_error = _refresh_cloud_auth_for_manual_action(client)
+                                if refresh_error:
+                                    cloud_error = _cloud_error_text(refresh_error, t)
+                                    st.error(t(f"تعذر تحديث الجلسة: {cloud_error}", f"Could not refresh session: {cloud_error}"))
+                                    st.stop()
+                                data_delete_res = client.delete_user_data(
+                                    cloud_auth.get("user_id", ""),
+                                    cloud_auth.get("access_token", ""),
                                 )
-                            else:
-                                st.error(
-                                    t(
-                                        f"تعذر حذف الحساب: {account_error_display} | وتعذر حذف البيانات: {data_error_display}",
-                                        f"Account deletion failed: {account_error_display} | Data deletion failed: {data_error_display}",
+                                account_delete_res = client.delete_current_user(cloud_auth.get("user_id", ""))
+
+                                if account_delete_res.get("ok"):
+                                    _sign_out_cloud_session(client)
+                                    st.success(
+                                        t(
+                                            "تم حذف الحساب السحابي بالكامل.",
+                                            "Cloud account deleted permanently.",
+                                        )
                                     )
-                                )
+                                    st.stop()
+
+                                account_error = str(account_delete_res.get("error", ""))
+                                data_error = str(data_delete_res.get("error", ""))
+                                account_error_display = _cloud_error_text(account_error, t)
+                                data_error_display = _cloud_error_text(data_error, t)
+                                if data_delete_res.get("ok"):
+                                    st.warning(
+                                        t(
+                                            f"تم حذف البيانات السحابية لكن حذف الحساب فشل: {account_error_display}",
+                                            f"Cloud data deleted, but account deletion failed: {account_error_display}",
+                                        )
+                                    )
+                                else:
+                                    st.error(
+                                        t(
+                                            f"تعذر حذف الحساب: {account_error_display} | وتعذر حذف البيانات: {data_error_display}",
+                                            f"Account deletion failed: {account_error_display} | Data deletion failed: {data_error_display}",
+                                        )
+                                    )
 
                     else:
                         mode = st.selectbox(
@@ -1401,6 +1448,43 @@ def render():
                         )
                         is_sign_up_mode = mode == t("إنشاء حساب", "Sign Up")
                         is_reset_mode = mode == t("نسيت كلمة المرور", "Forgot Password")
+
+                        if not is_reset_mode:
+                            apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
+                            render_pkce_cookie(apple_pkce_flow)
+                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, apple_pkce_flow["state"])
+                            apple_auth_url = client.build_oauth_authorize_url(
+                                "apple",
+                                apple_redirect_url,
+                                scopes="name email",
+                                code_challenge=apple_pkce_flow["code_challenge"],
+                                code_challenge_method=apple_pkce_flow["code_challenge_method"],
+                                state=apple_pkce_flow["state"],
+                            )
+                            apple_enabled = _cloud_apple_sign_in_enabled()
+                            apple_label = t("متابعة باستخدام Apple", "Continue with Apple")
+                            if apple_enabled and apple_auth_url:
+                                _render_same_tab_oauth_button(apple_label, apple_auth_url)
+                            else:
+                                _render_disabled_oauth_button(apple_label)
+                                missing_setup_reason = (
+                                    t(
+                                        "تسجيل الدخول بأبل متوقف من إعدادات البيئة.",
+                                        "Apple sign-in is disabled in the environment settings.",
+                                    )
+                                    if not apple_enabled
+                                    else t(
+                                        "تعذر تجهيز رابط Apple. تأكد من إعدادات Supabase قبل التجربة.",
+                                        "Could not prepare the Apple link. Check Supabase settings before testing.",
+                                    )
+                                )
+                                st.caption(
+                                    t(
+                                        f"{missing_setup_reason} تسجيل الدخول بالإيميل يعمل مؤقتًا.",
+                                        f"{missing_setup_reason} Email sign-in works for now.",
+                                    )
+                                )
+                            st.caption(t("أو", "Or"))
 
                         email = st.text_input(t("الإيميل", "Email"), type="default", key="cloud_auth_email")
                         password = ""
@@ -1422,36 +1506,6 @@ def render():
                                     "When enabled, sign-in stays saved on this browser. Use Sign Out to remove it.",
                                 )
                             )
-                            apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
-                            render_pkce_cookie(apple_pkce_flow)
-                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, apple_pkce_flow["state"])
-                            apple_auth_url = client.build_oauth_authorize_url(
-                                "apple",
-                                apple_redirect_url,
-                                scopes="name email",
-                                code_challenge=apple_pkce_flow["code_challenge"],
-                                code_challenge_method=apple_pkce_flow["code_challenge_method"],
-                                state=apple_pkce_flow["state"],
-                            )
-                            apple_enabled = _cloud_apple_sign_in_enabled()
-                            st.caption(t("أو", "Or"))
-                            if apple_enabled and apple_auth_url:
-                                apple_label = t("متابعة باستخدام Apple", "Continue with Apple")
-                                if st.button(apple_label, use_container_width=True, key="cloud_apple_signin"):
-                                    _render_same_tab_oauth_redirect(apple_label, apple_auth_url)
-                            else:
-                                st.button(
-                                    t("متابعة باستخدام Apple", "Continue with Apple"),
-                                    use_container_width=True,
-                                    disabled=True,
-                                    key="cloud_apple_signin_disabled",
-                                )
-                                st.caption(
-                                    t(
-                                        "تسجيل الدخول بأبل جاهز بالكود، لكنه يحتاج تفعيل Apple/Supabase أولًا.",
-                                        "Apple sign-in is prepared in code, but Apple/Supabase setup must be enabled first.",
-                                    )
-                                )
                         submit_label = t("إرسال رابط الاستعادة", "Send Reset Link") if is_reset_mode else t("متابعة", "Continue")
                         submit = st.button(submit_label, use_container_width=True, key="cloud_auth_submit")
 
@@ -1603,12 +1657,12 @@ def render():
                                                     save_persistent_state()
                                                     post_login_message_type = "info"
                                                     post_login_message = t(
-                                                        "تم تسجيل الدخول. لا توجد بيانات محفوظة في السحابة حاليًا، وبيانات هذا الجهاز بقيت كما هي.",
-                                                        "Signed in. No cloud data exists yet, and this device kept its current local data.",
+                                                        "تم تسجيل الدخول. لا توجد بيانات محفوظة في السحابة حاليًا.",
+                                                        "Signed in. No cloud data exists yet.",
                                                     )
                                                     post_login_caption = t(
-                                                        "إذا رغبت في إنشاء نسخة سحابية جديدة، استخدم زر رفع للسحابة.",
-                                                        "If you want to create a new cloud copy, use Upload to Cloud.",
+                                                        "أضف أول عملية وسيُنشئ GoushFi النسخة السحابية تلقائيًا. ويمكنك أيضًا استخدام رفع للسحابة بعد إضافة بيانات.",
+                                                        "Add your first transaction and GoushFi will create the cloud copy automatically. You can also use Upload to Cloud after adding data.",
                                                     )
                                             else:
                                                 pause_cloud_auto_sync(
@@ -1646,6 +1700,45 @@ def render():
                                                     st.stop()
 
                                             st.rerun()
+
+        with st.expander(t("تصفير التطبيق", "Start Fresh"), expanded=False):
+            st.warning(
+                t(
+                    "يمسح بيانات التطبيق من هذا الجهاز ومن السحابة، ثم يسجل خروج من السحابة. لا يحذف حساب Apple أو الإيميل نفسه.",
+                    "Clears this app's data from this device and the cloud, then signs out of cloud. It does not delete the Apple or email account itself.",
+                )
+            )
+            fresh_start_confirm = st.checkbox(
+                t(
+                    "أفهم أن هذا يمسح بيانات التطبيق من الجهاز والسحابة",
+                    "I understand this clears app data from this device and cloud",
+                ),
+                key="fresh_start_confirm",
+            )
+            if st.button(
+                t("تصفير التطبيق بالكامل", "Start Fresh Completely"),
+                use_container_width=True,
+                key="fresh_start_btn",
+                disabled=not fresh_start_confirm,
+            ):
+                fresh_client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
+                ok, fresh_error = _fresh_start_app_data(fresh_client)
+                if ok:
+                    st.success(
+                        t(
+                            "تم تصفير التطبيق. بيانات الجهاز والسحابة انمسحت، وتم تسجيل الخروج من السحابة.",
+                            "App reset complete. Device and cloud data were cleared, and cloud sign-in was removed.",
+                        )
+                    )
+                    st.stop()
+                st.error(
+                    t(
+                        "تعذر تصفير التطبيق. لم يتم مسح بيانات الجهاز لأن حذف السحابة لم يكتمل.",
+                        "Could not start fresh. Device data was not cleared because cloud deletion did not finish.",
+                    )
+                )
+                if fresh_error:
+                    st.caption(_cloud_error_text(fresh_error, t))
 
         # --- Device Data section (below cloud, always visible) ---
         with st.expander(t("بيانات هذا الجهاز", "This Device Data"), expanded=False):

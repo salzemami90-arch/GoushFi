@@ -1,6 +1,8 @@
 from services.cloud_sync_guard import (
     payload_has_meaningful_data,
     payload_snapshot,
+    pause_cloud_auto_sync,
+    should_auto_create_cloud_copy_after_empty_remote,
     should_keep_local_data_before_auto_import,
 )
 
@@ -14,6 +16,26 @@ def test_payload_has_meaningful_data_true_for_finance_keys():
     assert payload_has_meaningful_data({"transactions": {"2026-04": [{"amount": 10}]}}) is True
     assert payload_has_meaningful_data({"documents": [{"name": "proof.pdf"}]}) is True
     assert payload_has_meaningful_data({"recurring": {"items": [{"name": "Rent"}]}}) is True
+
+
+def test_can_auto_create_cloud_copy_after_empty_remote_with_meaningful_data():
+    session_state = {}
+    pause_cloud_auto_sync(session_state, "user-1", reason="cloud_empty_after_cookie_restore")
+
+    assert should_auto_create_cloud_copy_after_empty_remote(
+        session_state,
+        {"transactions": {"2026-06": [{"amount": 1000, "type": "income"}]}},
+    ) is True
+
+
+def test_does_not_auto_create_cloud_copy_without_meaningful_data():
+    session_state = {}
+    pause_cloud_auto_sync(session_state, "user-1", reason="cloud_empty_after_sign_in")
+
+    assert should_auto_create_cloud_copy_after_empty_remote(
+        session_state,
+        {"transactions": {}, "documents": []},
+    ) is False
 
 
 def test_should_keep_local_data_before_auto_import_when_remote_differs():
