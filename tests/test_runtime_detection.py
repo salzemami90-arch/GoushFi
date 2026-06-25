@@ -133,6 +133,21 @@ class RuntimeDetectionTests(unittest.TestCase):
         self.assertTrue(fake_st.session_state["settings"]["language_user_selected"])
         self.assertTrue(fake_st.session_state["_welcome_completed"])
 
+    def test_native_shell_query_language_does_not_override_saved_language(self):
+        fake_st = SimpleNamespace(
+            query_params={
+                "f_w": "1",
+                "f_shell": "1",
+                "f_lang": "ar",
+            },
+            session_state={"settings": {"language": "English", "language_user_selected": False, "name": ""}},
+        )
+        with patch("config_floosy.st", fake_st):
+            _apply_browser_query_preferences()
+        self.assertEqual(fake_st.session_state["settings"]["language"], "English")
+        self.assertFalse(fake_st.session_state["settings"]["language_user_selected"])
+        self.assertTrue(fake_st.session_state["_welcome_completed"])
+
     def test_regular_web_preferences_drop_stale_page_query(self):
         fake_st = SimpleNamespace(
             query_params={

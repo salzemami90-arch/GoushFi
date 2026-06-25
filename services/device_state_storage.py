@@ -16,6 +16,15 @@ _BROWSER_STORAGE_BRIDGE = components.declare_component(
 )
 
 
+def _is_native_shell_runtime() -> bool:
+    try:
+        from config_floosy import _is_native_shell_runtime as is_native_shell_runtime
+
+        return bool(is_native_shell_runtime())
+    except Exception:
+        return False
+
+
 def _encode_payload(payload: dict) -> str:
     if not isinstance(payload, dict):
         return ""
@@ -40,7 +49,7 @@ def _decode_payload(raw_value: str) -> dict:
 
 
 def browser_device_storage_available() -> bool:
-    return True
+    return not _is_native_shell_runtime()
 
 
 def sync_device_state_browser_storage(
@@ -50,6 +59,9 @@ def sync_device_state_browser_storage(
     clear: bool = False,
     key: str = "device_state_browser_bridge",
 ) -> tuple[dict, bool]:
+    if _is_native_shell_runtime():
+        return {}, True
+
     action = "clear" if clear else "read"
     encoded_value = ""
     if not clear and enabled and isinstance(payload, dict):

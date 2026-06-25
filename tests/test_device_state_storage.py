@@ -60,6 +60,24 @@ def test_device_state_storage_clear_removes_saved_value(monkeypatch):
     assert captured["value"] == ""
 
 
+def test_device_state_storage_skips_component_in_native_shell(monkeypatch):
+    monkeypatch.setattr(device_state_storage, "_is_native_shell_runtime", lambda: True)
+
+    def fail_component(**kwargs):
+        raise AssertionError("native shell should not render the device storage component")
+
+    monkeypatch.setattr(device_state_storage, "_BROWSER_STORAGE_BRIDGE", fail_component)
+
+    restored, ready = sync_device_state_browser_storage(
+        {"settings": {"device_save_enabled": True}},
+        key="device_state_native_shell_test",
+    )
+
+    assert ready is True
+    assert restored == {}
+    assert device_state_storage.browser_device_storage_available() is False
+
+
 def test_device_state_bridge_clear_uses_safe_indexeddb_cleanup():
     bridge_html = (
         Path(__file__).resolve().parent.parent

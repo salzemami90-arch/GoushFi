@@ -279,7 +279,7 @@ def _apply_browser_query_preferences() -> None:
         return
 
     query_language = str(prefs.get("language", "") or "").strip()
-    if query_language in set(_ACCEPT_LANG_MAP.values()):
+    if query_language in set(_ACCEPT_LANG_MAP.values()) and not _is_native_shell_runtime():
         settings["language"] = query_language
         settings["language_user_selected"] = True
 
