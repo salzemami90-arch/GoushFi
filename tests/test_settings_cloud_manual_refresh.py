@@ -298,6 +298,29 @@ def test_save_method_callbacks_make_options_mutually_exclusive(monkeypatch):
     assert fake_st.session_state["settings_cloud_sync_enabled"] is True
 
 
+def test_empty_local_payload_clears_stale_cloud_conflict_notice(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.session_state[PAUSE_REASON_KEY] = "local_cloud_conflict_after_sign_in"
+    warnings = []
+    fake_st.warning = lambda message: warnings.append(message)
+    monkeypatch.setattr(settings_page, "st", fake_st)
+    monkeypatch.setattr(
+        settings_page,
+        "export_app_state_payload",
+        lambda: {
+            "transactions": {},
+            "savings": {"2026-06": {"goal": 0, "transactions": []}},
+            "project_data": {"2026-06": {"projects": {}}},
+        },
+    )
+
+    settings_page._render_cloud_sync_pause_notice(lambda ar, en: en)
+
+    assert warnings == []
+    assert fake_st.session_state[PAUSE_REASON_KEY] == ""
+    assert cloud_sync_ready_for_user(fake_st.session_state, "user-old") is True
+
+
 class _InitialCloudCopyClient:
     def __init__(self, result):
         self.result = result

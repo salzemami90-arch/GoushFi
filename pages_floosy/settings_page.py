@@ -540,6 +540,13 @@ def _render_cloud_sync_pause_notice(t) -> None:
         "local_cloud_conflict_after_cookie_restore",
         "local_cloud_conflict_after_auto_pull",
     }:
+        if not payload_has_meaningful_data(export_app_state_payload()):
+            clear_cloud_sync_guard(st.session_state)
+            cloud_auth = st.session_state.get("cloud_auth", {})
+            if isinstance(cloud_auth, dict) and cloud_auth.get("logged_in") and cloud_auth.get("user_id"):
+                mark_cloud_sync_ready(st.session_state, str(cloud_auth.get("user_id") or ""))
+            return
+
         st.warning(
             t(
                 "وجدنا بيانات محلية مختلفة عن البيانات السحابية، لذلك أبقينا بيانات هذا الجهاز كما هي مؤقتًا. إذا أردت استبدالها بنسخة السحابة استخدم استعادة من السحابة، وإذا أردت رفع الحالية استخدم رفع للسحابة.",
@@ -1618,6 +1625,13 @@ def render():
                             apple_label = t("متابعة باستخدام Apple", "Continue with Apple")
                             if apple_enabled and apple_auth_url:
                                 _render_same_tab_oauth_button(apple_label, apple_auth_url)
+                                if native_implicit_oauth:
+                                    st.caption(
+                                        t(
+                                            "إذا لم يكتمل خيار Face ID أو Passkey داخل Apple، اختاري Email or Phone Number واكملي بإيميل Apple.",
+                                            "If Apple Face ID or Passkey does not finish, choose Email or Phone Number and continue with your Apple email.",
+                                        )
+                                    )
                             else:
                                 _render_disabled_oauth_button(apple_label)
                                 missing_setup_reason = (
