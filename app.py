@@ -816,10 +816,19 @@ def main():
     _handle_cloud_oauth_code_callback()
     render_cloud_oauth_hash_capture_inline()
     render_cloud_oauth_callback_capture()
+    cloud_auth_clear_requested = bool(
+        st.session_state.get("_cloud_auth_cookie_clear_pending")
+        or st.session_state.get("_cloud_browser_storage_clear_requested")
+    )
     browser_storage_auth, browser_storage_ready = _sync_cloud_auth_browser_bridge()
-    bootstrap_cloud_auth_from_storage()
-    _restore_cloud_auth_from_cookie(browser_storage_auth, browser_storage_ready)
-    _sync_cloud_auth_cookie_preference()
+    if cloud_auth_clear_requested:
+        st.session_state.pop("_cloud_auth_cookie_clear_pending", None)
+        st.session_state["_cloud_cookie_restore_checked"] = True
+        clear_cloud_auth_cookie(reload_after_write=False)
+    else:
+        bootstrap_cloud_auth_from_storage()
+        _restore_cloud_auth_from_cookie(browser_storage_auth, browser_storage_ready)
+        _sync_cloud_auth_cookie_preference()
 
     # تحميل الصفحات بشكل آمن
     try:

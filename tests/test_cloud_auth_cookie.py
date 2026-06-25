@@ -28,6 +28,8 @@ def test_remember_cloud_auth_renders_hosted_cookie_variants(monkeypatch):
     assert "SameSite=Lax" in html
     assert "SameSite=None; Secure" in html
     assert "Partitioned" in html
+    assert "signedOutFlag" in html
+    assert "storage.removeItem(signedOutFlag)" in html
     assert "localStorage" in html
     assert "floosy_cloud_auth_storage" in html
     assert "window.top" in html
@@ -68,6 +70,7 @@ def test_clear_cloud_auth_cookie_uses_zero_max_age(monkeypatch):
     assert "const maxAge = 0;" in html
     assert "max-age=${maxAge}" in html
     assert "Thu, 01 Jan 1970 00:00:00 GMT" in html
+    assert "storage.setItem(signedOutFlag" in html
 
 
 def test_render_cloud_oauth_callback_capture_uses_browser_bridge_payload(monkeypatch):
@@ -280,6 +283,8 @@ def test_bootstrap_cloud_auth_from_storage_renders_reload_bridge(monkeypatch):
     html = captured["html"]
     assert "floosy_cloud_auth_storage" in html
     assert "sessionStorage" in html
+    assert "signedOutFlag" in html
+    assert "storage.removeItem(storageName)" in html
     assert "location.replace" in html
     assert "bootFlag" in html
     assert "collectWindows" in html

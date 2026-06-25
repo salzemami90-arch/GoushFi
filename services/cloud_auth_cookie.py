@@ -217,6 +217,8 @@ def _render_cookie_script(value: str, max_age: int, *, reload_after_write: bool 
           const name = {cookie_name};
           const value = encodeURIComponent({cookie_value});
           const maxAge = {cookie_max_age};
+          const storageName = {storage_name};
+          const signedOutFlag = `${{storageName}}_signed_out`;
           const expiry = maxAge === 0 ? "; expires=Thu, 01 Jan 1970 00:00:00 GMT" : "";
           const shouldReloadAfterWrite = {"true" if reload_after_write else "false"};
 
@@ -316,9 +318,11 @@ def _render_cookie_script(value: str, max_age: int, *, reload_after_write: bool 
           for (const storage of storages) {{
             try {{
               if ({cookie_max_age} > 0 && {cookie_value}) {{
-                storage.setItem({storage_name}, {cookie_value});
+                storage.removeItem(signedOutFlag);
+                storage.setItem(storageName, {cookie_value});
               }} else {{
-                storage.removeItem({storage_name});
+                storage.removeItem(storageName);
+                storage.setItem(signedOutFlag, String(Date.now()));
               }}
             }} catch (error) {{}}
           }}
@@ -518,6 +522,7 @@ def bootstrap_cloud_auth_from_storage() -> None:
           const storageName = {storage_name};
           const maxAge = {cookie_max_age};
           const bootFlag = `${{storageName}}_bootstrap_done`;
+          const signedOutFlag = `${{storageName}}_signed_out`;
 
           function collectWindows() {{
             const wins = [];
@@ -606,6 +611,27 @@ def bootstrap_cloud_auth_from_storage() -> None:
 
           const cookieExists = docs.some((targetDoc) => !!readCookie(targetDoc, cookieName));
           if (cookieExists) {{
+            for (const store of sessionStores) {{
+              try {{
+                store.removeItem(bootFlag);
+              }} catch (error) {{}}
+            }}
+            return;
+          }}
+
+          const signedOut = storages.some((storage) => {{
+            try {{
+              return !!String(storage.getItem(signedOutFlag) || "").trim();
+            }} catch (error) {{
+              return false;
+            }}
+          }});
+          if (signedOut) {{
+            for (const storage of storages) {{
+              try {{
+                storage.removeItem(storageName);
+              }} catch (error) {{}}
+            }}
             for (const store of sessionStores) {{
               try {{
                 store.removeItem(bootFlag);
