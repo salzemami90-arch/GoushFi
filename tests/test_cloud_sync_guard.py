@@ -11,10 +11,32 @@ from services.cloud_sync_guard import (
 def test_payload_has_meaningful_data_false_for_empty_payload():
     assert payload_has_meaningful_data({}) is False
     assert payload_has_meaningful_data({"transactions": {}, "documents": [], "recurring": {"items": []}}) is False
+    assert payload_has_meaningful_data(
+        {
+            "transactions": {"2026-June": []},
+            "savings": {"2026-June": {"goal": 0.0, "transactions": []}},
+            "project_data": {
+                "2026-June": {
+                    "project_name": "",
+                    "licenses": [],
+                    "budget_expected_income": 0.0,
+                    "budget_expected_operating": 0.0,
+                    "budget_note": "",
+                    "project_transactions": [],
+                    "assets": [],
+                    "projects": {},
+                    "selected_project": "",
+                }
+            },
+        }
+    ) is False
+    assert payload_has_meaningful_data({"transactions": {"2026-04": [{"amount": 0, "note": ""}]}}) is False
 
 
 def test_payload_has_meaningful_data_true_for_finance_keys():
     assert payload_has_meaningful_data({"transactions": {"2026-04": [{"amount": 10}]}}) is True
+    assert payload_has_meaningful_data({"savings": {"2026-04": {"goal": 100, "transactions": []}}}) is True
+    assert payload_has_meaningful_data({"project_data": {"2026-04": {"project_name": "Launch"}}}) is True
     assert payload_has_meaningful_data({"documents": [{"name": "proof.pdf"}]}) is True
     assert payload_has_meaningful_data({"recurring": {"items": [{"name": "Rent"}]}}) is True
 
