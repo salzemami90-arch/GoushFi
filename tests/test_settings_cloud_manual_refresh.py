@@ -435,6 +435,18 @@ def test_same_tab_oauth_button_renders_self_target(monkeypatch):
     assert captured["unsafe_allow_html"] is True
 
 
+def test_native_shell_apple_oauth_uses_implicit_flow(monkeypatch):
+    fake_st = _FakeSt()
+    fake_st.query_params = {"f_shell": "1"}
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    assert settings_page._native_shell_oauth_uses_implicit_flow() is True
+
+    fake_st.query_params = {}
+
+    assert settings_page._native_shell_oauth_uses_implicit_flow() is False
+
+
 def test_same_tab_oauth_redirect_attempts_parent_navigation(monkeypatch):
     fake_st = _FakeSt()
     captured = {}

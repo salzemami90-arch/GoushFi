@@ -129,24 +129,27 @@ def test_cloud_auth_browser_bridge_captures_oauth_hash():
 def test_render_cloud_oauth_hash_capture_inline_reads_parent_location_hash(monkeypatch):
     captured = {}
 
-    def fake_markdown(html, unsafe_allow_html=False):
+    def fake_html(html, height=0, width=0):
         captured["html"] = html
-        captured["unsafe_allow_html"] = unsafe_allow_html
+        captured["height"] = height
+        captured["width"] = width
 
-    monkeypatch.setattr("services.cloud_auth_cookie.st.markdown", fake_markdown)
-    monkeypatch.setattr("services.cloud_auth_cookie._is_native_shell_runtime", lambda: False)
+    monkeypatch.setattr("services.cloud_auth_cookie.components.html", fake_html)
+    monkeypatch.setattr("services.cloud_auth_cookie._is_native_shell_runtime", lambda: True)
 
     render_cloud_oauth_hash_capture_inline()
 
     html = captured["html"]
-    assert "window.location.hash" in html
+    assert "windowHash" in html
+    assert "collectWindows" in html
     assert "refresh_token" in html
     assert "access_token" in html
-    assert "window.localStorage.setItem" in html
-    assert "document.cookie" in html
-    assert "window.history.replaceState" in html
-    assert "window.location.reload" in html
-    assert captured["unsafe_allow_html"] is True
+    assert "storage.setItem(storageName, encodedPayload)" in html
+    assert "targetDoc.cookie" in html
+    assert "targetWin.history.replaceState" in html
+    assert "targetWin.location.reload" in html
+    assert captured["height"] == 0
+    assert captured["width"] == 0
 
 
 def test_read_cloud_auth_cookie_decodes_payload(monkeypatch):

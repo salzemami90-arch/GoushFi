@@ -339,6 +339,13 @@ def _cloud_apple_sign_in_enabled() -> bool:
     return True if explicit_value is None else explicit_value
 
 
+def _native_shell_oauth_uses_implicit_flow() -> bool:
+    try:
+        return str(st.query_params.get("f_shell", "") or "").strip() == "1"
+    except Exception:
+        return False
+
+
 def _current_runtime_url() -> str:
     try:
         context = getattr(st, "context", None)
@@ -1593,16 +1600,19 @@ def render():
                         is_reset_mode = mode == t("نسيت كلمة المرور", "Forgot Password")
 
                         if not is_reset_mode:
-                            apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
-                            render_pkce_cookie(apple_pkce_flow)
-                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, apple_pkce_flow["state"])
+                            native_implicit_oauth = _native_shell_oauth_uses_implicit_flow()
+                            apple_pkce_flow = {}
+                            if not native_implicit_oauth:
+                                apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
+                                render_pkce_cookie(apple_pkce_flow)
+                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, str(apple_pkce_flow.get("state") or ""))
                             apple_auth_url = client.build_oauth_authorize_url(
                                 "apple",
                                 apple_redirect_url,
                                 scopes="name email",
-                                code_challenge=apple_pkce_flow["code_challenge"],
-                                code_challenge_method=apple_pkce_flow["code_challenge_method"],
-                                state=apple_pkce_flow["state"],
+                                code_challenge=str(apple_pkce_flow.get("code_challenge") or ""),
+                                code_challenge_method=str(apple_pkce_flow.get("code_challenge_method") or ""),
+                                state=str(apple_pkce_flow.get("state") or ""),
                             )
                             apple_enabled = _cloud_apple_sign_in_enabled()
                             apple_label = t("متابعة باستخدام Apple", "Continue with Apple")

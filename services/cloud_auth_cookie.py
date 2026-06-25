@@ -375,17 +375,48 @@ def render_cloud_oauth_callback_capture() -> dict:
 
 
 def render_cloud_oauth_hash_capture_inline() -> None:
-    if _is_native_shell_runtime():
-        return
-
     cookie_name = json.dumps(COOKIE_NAME)
     storage_name = json.dumps(STORAGE_NAME)
     cookie_max_age = int(COOKIE_MAX_AGE_SECONDS)
-    st.markdown(
+    components.html(
         f"""
         <script>
         (function() {{
-          const hashValue = String(window.location.hash || "");
+          function collectWindows() {{
+            const wins = [];
+            let current = window;
+            while (current) {{
+              if (!wins.includes(current)) {{
+                wins.push(current);
+              }}
+              let nextWin = null;
+              try {{
+                nextWin = current.parent && current.parent !== current ? current.parent : null;
+              }} catch (error) {{
+                nextWin = null;
+              }}
+              if (!nextWin) break;
+              current = nextWin;
+            }}
+            try {{
+              if (window.top && !wins.includes(window.top)) {{
+                wins.push(window.top);
+              }}
+            }} catch (error) {{}}
+            return wins;
+          }}
+
+          function windowHash(targetWin) {{
+            try {{
+              return String((targetWin && targetWin.location && targetWin.location.hash) || "");
+            }} catch (error) {{
+              return "";
+            }}
+          }}
+
+          const wins = collectWindows();
+          const sourceWin = wins.find((targetWin) => /(?:^#|&)refresh_token=/.test(windowHash(targetWin)));
+          const hashValue = windowHash(sourceWin || window);
           if (!/(?:^#|&)refresh_token=/.test(hashValue)) {{
             return;
           }}
@@ -449,11 +480,27 @@ def render_cloud_oauth_hash_capture_inline() -> None:
             refresh_token: refreshToken,
           }}));
 
-          try {{
-            window.localStorage.setItem(storageName, encodedPayload);
-          }} catch (error) {{}}
+          const storages = Array.from(new Set(wins.map((targetWin) => {{
+            try {{
+              return targetWin && targetWin.localStorage ? targetWin.localStorage : null;
+            }} catch (error) {{
+              return null;
+            }}
+          }}).filter(Boolean)));
 
-          const isHttps = String(window.location.protocol || "").toLowerCase() === "https:";
+          for (const storage of storages) {{
+            try {{
+              storage.setItem(storageName, encodedPayload);
+            }} catch (error) {{}}
+          }}
+
+          const isHttps = wins.some((targetWin) => {{
+            try {{
+              return String(targetWin.location.protocol || "").toLowerCase() === "https:";
+            }} catch (error) {{
+              return false;
+            }}
+          }});
           const baseAttrs = `path=/; max-age=${{maxAge}}`;
           const variants = [
             `${{cookieName}}=${{encodeURIComponent(encodedPayload)}}; ${{baseAttrs}}; SameSite=Lax${{isHttps ? "; Secure" : ""}}`,
@@ -465,29 +512,42 @@ def render_cloud_oauth_hash_capture_inline() -> None:
             );
           }}
 
-          for (const variant of variants) {{
+          const docs = Array.from(new Set(wins.map((targetWin) => {{
             try {{
-              document.cookie = variant;
-            }} catch (error) {{}}
+              return targetWin && targetWin.document ? targetWin.document : null;
+            }} catch (error) {{
+              return null;
+            }}
+          }}).filter(Boolean)));
+
+          for (const targetDoc of docs) {{
+            for (const variant of variants) {{
+              try {{
+                targetDoc.cookie = variant;
+              }} catch (error) {{}}
+            }}
           }}
 
+          const targetWin = sourceWin || window;
           try {{
-            window.history.replaceState(null, document.title, `${{window.location.origin}}${{window.location.pathname}}${{window.location.search}}`);
+            const cleanUrl = `${{targetWin.location.origin}}${{targetWin.location.pathname}}${{targetWin.location.search}}`;
+            targetWin.history.replaceState(null, targetWin.document ? targetWin.document.title : "", cleanUrl);
           }} catch (error) {{
             try {{
-              window.location.hash = "";
+              targetWin.location.hash = "";
             }} catch (nestedError) {{}}
           }}
 
           window.setTimeout(() => {{
             try {{
-              window.location.reload();
+              targetWin.location.reload();
             }} catch (error) {{}}
           }}, 80);
         }})();
         </script>
         """,
-        unsafe_allow_html=True,
+        height=0,
+        width=0,
     )
 
 
