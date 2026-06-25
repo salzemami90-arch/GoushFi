@@ -45,6 +45,20 @@ def payload_snapshot(payload) -> str:
         return ""
 
 
+def stored_snapshot_matches(stored_snapshot: str, current_snapshot: str) -> bool:
+    clean_stored = str(stored_snapshot or "").strip()
+    clean_current = str(current_snapshot or "").strip()
+    if not clean_stored or not clean_current:
+        return False
+    if clean_stored == clean_current:
+        return True
+    try:
+        stored_payload = json.loads(clean_stored)
+    except Exception:
+        return False
+    return payload_snapshot(stored_payload) == clean_current
+
+
 def payload_has_meaningful_data(payload) -> bool:
     if not isinstance(payload, dict):
         return False

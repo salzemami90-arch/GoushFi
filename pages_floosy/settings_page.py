@@ -528,7 +528,11 @@ def _get_app_scope() -> dict:
 def _render_cloud_sync_pause_notice(t) -> None:
     reason = cloud_sync_pause_reason(st.session_state)
 
-    if reason in {"local_cloud_conflict_after_sign_in", "local_cloud_conflict_after_cookie_restore"}:
+    if reason in {
+        "local_cloud_conflict_after_sign_in",
+        "local_cloud_conflict_after_cookie_restore",
+        "local_cloud_conflict_after_auto_pull",
+    }:
         st.warning(
             t(
                 "وجدنا بيانات محلية مختلفة عن البيانات السحابية، لذلك أبقينا بيانات هذا الجهاز كما هي مؤقتًا. إذا أردت استبدالها بنسخة السحابة استخدم استعادة من السحابة، وإذا أردت رفع الحالية استخدم رفع للسحابة.",

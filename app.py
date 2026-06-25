@@ -38,6 +38,7 @@ from services.cloud_sync_guard import (
     pause_cloud_auto_sync,
     should_keep_local_data_before_auto_import,
     should_auto_create_cloud_copy_after_empty_remote,
+    stored_snapshot_matches,
 )
 from services.device_state_storage import sync_device_state_browser_storage
 from services.i18n import make_t, get_lang_code, is_rtl as _is_rtl
@@ -50,12 +51,33 @@ from services.supabase_sync import SupabaseSyncClient
 
 
 def _set_cloud_snapshot_now(user_id: str = "") -> None:
-    try:
-        snapshot = json.dumps(export_app_state_payload(), ensure_ascii=False, sort_keys=True)
-    except Exception:
-        snapshot = ""
+    snapshot = payload_snapshot(export_app_state_payload())
     st.session_state["_cloud_last_snapshot"] = snapshot
     st.session_state["_cloud_last_pull_user"] = str(user_id or "")
+
+
+def _cloud_remote_check_due(user_id: str, *, interval_seconds: int = 8) -> bool:
+    clean_user_id = str(user_id or "")
+    if st.session_state.get("_cloud_remote_check_user") != clean_user_id:
+        return True
+
+    raw_checked_at = str(st.session_state.get("_cloud_remote_check_at") or "")
+    if not raw_checked_at:
+        return True
+
+    try:
+        checked_at = datetime.fromisoformat(raw_checked_at)
+        if checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return True
+
+    return (datetime.now(timezone.utc) - checked_at).total_seconds() >= interval_seconds
+
+
+def _mark_cloud_remote_checked(user_id: str) -> None:
+    st.session_state["_cloud_remote_check_user"] = str(user_id or "")
+    st.session_state["_cloud_remote_check_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _apply_cloud_auth_session(
@@ -535,17 +557,59 @@ def _sync_cloud_if_logged_in() -> None:
                     return
 
     payload = export_app_state_payload()
+    snapshot = payload_snapshot(payload)
+    last_snapshot = str(st.session_state.get("_cloud_last_snapshot") or "")
+
+    if cloud_sync_ready_for_user(st.session_state, user_id) and _cloud_remote_check_due(user_id):
+        pull = client.fetch_user_data(user_id, access_token)
+        _mark_cloud_remote_checked(user_id)
+
+        remote_payload = pull.get("data") if isinstance(pull.get("data"), dict) else None
+        if pull.get("ok") and remote_payload is not None:
+            remote_snapshot = payload_snapshot(remote_payload)
+            if remote_snapshot and remote_snapshot != snapshot:
+                local_is_unchanged_since_last_sync = (
+                    not payload_has_meaningful_data(payload)
+                    or stored_snapshot_matches(last_snapshot, snapshot)
+                )
+                if local_is_unchanged_since_last_sync:
+                    import_app_state_payload(remote_payload)
+                    _set_scope_owner(user_id, str(cloud_auth.get("email") or ""))
+                    _set_cloud_auth(
+                        True,
+                        email=str(cloud_auth.get("email") or ""),
+                        user_id=user_id,
+                        access_token=access_token,
+                        refresh_token=str(cloud_auth.get("refresh_token") or ""),
+                    )
+                    mark_cloud_sync_ready(st.session_state, user_id)
+                    st.session_state["_cloud_last_snapshot"] = remote_snapshot
+                    st.session_state["_cloud_last_pull_user"] = user_id
+                    st.session_state["_cloud_sync_last_error"] = ""
+                    if isinstance(st.session_state.get("settings"), dict):
+                        st.session_state.settings["cloud_sync_enabled"] = True
+                        st.session_state.settings["cloud_last_sync_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                    save_persistent_state()
+                    st.rerun()
+
+                st.session_state["_cloud_last_snapshot"] = remote_snapshot
+                st.session_state["_cloud_last_pull_user"] = user_id
+                pause_cloud_auto_sync(st.session_state, user_id, reason="local_cloud_conflict_after_auto_pull")
+                save_persistent_state()
+                return
+        elif not pull.get("ok"):
+            st.session_state["_cloud_sync_last_error"] = str(pull.get("error") or "sync_pull_failed")
+            return
+
     if not cloud_sync_ready_for_user(st.session_state, user_id):
         if not should_auto_create_cloud_copy_after_empty_remote(st.session_state, payload):
             return
 
-    try:
-        snapshot = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    except Exception:
+    if not snapshot:
         return
 
     if (
-        st.session_state.get("_cloud_last_snapshot") == snapshot
+        stored_snapshot_matches(str(st.session_state.get("_cloud_last_snapshot") or ""), snapshot)
         and st.session_state.get("_cloud_last_pull_user") == user_id
     ):
         return

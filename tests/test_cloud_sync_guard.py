@@ -4,6 +4,7 @@ from services.cloud_sync_guard import (
     pause_cloud_auto_sync,
     should_auto_create_cloud_copy_after_empty_remote,
     should_keep_local_data_before_auto_import,
+    stored_snapshot_matches,
 )
 
 
@@ -74,3 +75,13 @@ def test_schema_version_metadata_does_not_trigger_cloud_conflict():
 
     assert payload_snapshot(local_payload) == payload_snapshot(remote_payload)
     assert should_keep_local_data_before_auto_import(local_payload, remote_payload) is False
+
+
+def test_stored_snapshot_matches_legacy_full_payload_snapshot():
+    payload = {
+        "_schema_version": 1,
+        "transactions": {"2026-06": [{"amount": 554, "note": "salary"}]},
+    }
+    legacy_stored_snapshot = '{"_schema_version": 1, "transactions": {"2026-06": [{"amount": 554, "note": "salary"}]}}'
+
+    assert stored_snapshot_matches(legacy_stored_snapshot, payload_snapshot(payload)) is True
