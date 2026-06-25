@@ -110,6 +110,10 @@ def _apply_cloud_auth_session(
         access_token=clean_access_token,
         refresh_token=clean_refresh_token,
     )
+    st.session_state.pop("_cloud_auth_cookie_clear_pending", None)
+    st.session_state.pop("_cloud_browser_storage_clear_requested", None)
+    st.session_state["_cloud_cookie_restore_checked"] = True
+    st.session_state["_cloud_remember_login"] = True
     _set_scope_owner(clean_user_id, clean_email)
     if isinstance(st.session_state.get("settings"), dict):
         st.session_state.settings["cloud_sync_enabled"] = True
