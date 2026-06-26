@@ -38,7 +38,7 @@ from services.supabase_sync import SupabaseSyncClient
 
 
 KUWAIT_TZ = timezone(timedelta(hours=3), name="Asia/Kuwait")
-WEB_BUILD_MARKER = "2026-06-26-oauth-diagnostics-2"
+WEB_BUILD_MARKER = "2026-06-26-native-apple-1"
 
 
 def _currency_option_label(value: str, lang_code: str) -> str:
@@ -419,6 +419,10 @@ def _render_same_tab_oauth_button(label: str, url: str) -> None:
         f"{safe_label}</a>",
         unsafe_allow_html=True,
     )
+
+
+def _render_native_apple_sign_in_button(label: str) -> None:
+    _render_same_tab_oauth_button(label, "goushfi://native-apple-sign-in")
 
 
 def _render_disabled_oauth_button(label: str) -> None:
@@ -1613,50 +1617,60 @@ def render():
                         is_reset_mode = mode == t("نسيت كلمة المرور", "Forgot Password")
 
                         if not is_reset_mode:
-                            native_implicit_oauth = _native_shell_oauth_uses_implicit_flow()
-                            apple_pkce_flow = {}
-                            if not native_implicit_oauth:
-                                apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
-                                render_pkce_cookie(apple_pkce_flow)
-                            apple_redirect_url = _cloud_oauth_redirect_url(lang_code, str(apple_pkce_flow.get("state") or ""))
-                            apple_auth_url = client.build_oauth_authorize_url(
-                                "apple",
-                                apple_redirect_url,
-                                scopes="name email",
-                                code_challenge=str(apple_pkce_flow.get("code_challenge") or ""),
-                                code_challenge_method=str(apple_pkce_flow.get("code_challenge_method") or ""),
-                                state=str(apple_pkce_flow.get("state") or ""),
-                            )
+                            native_shell_oauth = _native_shell_oauth_uses_implicit_flow()
                             apple_enabled = _cloud_apple_sign_in_enabled()
                             apple_label = t("متابعة باستخدام Apple", "Continue with Apple")
-                            if apple_enabled and apple_auth_url:
-                                _render_same_tab_oauth_button(apple_label, apple_auth_url)
-                                if native_implicit_oauth:
+                            if native_shell_oauth:
+                                if apple_enabled:
+                                    _render_native_apple_sign_in_button(apple_label)
                                     st.caption(
                                         t(
-                                            "إذا لم يكتمل خيار Face ID أو Passkey داخل Apple، اختاري Email or Phone Number واكملي بإيميل Apple.",
-                                            "If Apple Face ID or Passkey does not finish, choose Email or Phone Number and continue with your Apple email.",
+                                            "يفتح تسجيل Apple الأصلي على iPhone باستخدام Face ID أو رمز الجهاز.",
+                                            "Opens native iPhone Apple sign-in with Face ID or device passcode.",
+                                        )
+                                    )
+                                else:
+                                    _render_disabled_oauth_button(apple_label)
+                                    st.caption(
+                                        t(
+                                            "تسجيل الدخول بأبل متوقف من إعدادات البيئة. تسجيل الدخول بالإيميل يعمل مؤقتًا.",
+                                            "Apple sign-in is disabled in the environment settings. Email sign-in works for now.",
                                         )
                                     )
                             else:
-                                _render_disabled_oauth_button(apple_label)
-                                missing_setup_reason = (
-                                    t(
-                                        "تسجيل الدخول بأبل متوقف من إعدادات البيئة.",
-                                        "Apple sign-in is disabled in the environment settings.",
-                                    )
-                                    if not apple_enabled
-                                    else t(
-                                        "تعذر تجهيز رابط Apple. تأكد من إعدادات Supabase قبل التجربة.",
-                                        "Could not prepare the Apple link. Check Supabase settings before testing.",
-                                    )
+                                apple_pkce_flow = {}
+                                apple_pkce_flow = get_or_create_pkce_flow(st.session_state)
+                                render_pkce_cookie(apple_pkce_flow)
+                                apple_redirect_url = _cloud_oauth_redirect_url(lang_code, str(apple_pkce_flow.get("state") or ""))
+                                apple_auth_url = client.build_oauth_authorize_url(
+                                    "apple",
+                                    apple_redirect_url,
+                                    scopes="name email",
+                                    code_challenge=str(apple_pkce_flow.get("code_challenge") or ""),
+                                    code_challenge_method=str(apple_pkce_flow.get("code_challenge_method") or ""),
+                                    state=str(apple_pkce_flow.get("state") or ""),
                                 )
-                                st.caption(
-                                    t(
-                                        f"{missing_setup_reason} تسجيل الدخول بالإيميل يعمل مؤقتًا.",
-                                        f"{missing_setup_reason} Email sign-in works for now.",
+                                if apple_enabled and apple_auth_url:
+                                    _render_same_tab_oauth_button(apple_label, apple_auth_url)
+                                else:
+                                    _render_disabled_oauth_button(apple_label)
+                                    missing_setup_reason = (
+                                        t(
+                                            "تسجيل الدخول بأبل متوقف من إعدادات البيئة.",
+                                            "Apple sign-in is disabled in the environment settings.",
+                                        )
+                                        if not apple_enabled
+                                        else t(
+                                            "تعذر تجهيز رابط Apple. تأكد من إعدادات Supabase قبل التجربة.",
+                                            "Could not prepare the Apple link. Check Supabase settings before testing.",
+                                        )
                                     )
-                                )
+                                    st.caption(
+                                        t(
+                                            f"{missing_setup_reason} تسجيل الدخول بالإيميل يعمل مؤقتًا.",
+                                            f"{missing_setup_reason} Email sign-in works for now.",
+                                        )
+                                    )
                             st.caption(t("أو", "Or"))
 
                         email = st.text_input(t("الإيميل", "Email"), type="default", key="cloud_auth_email")

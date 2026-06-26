@@ -315,6 +315,43 @@ class SupabaseSyncClient:
             "raw": data,
         }
 
+    def sign_in_with_id_token(self, provider: str, id_token: str, nonce: str = "") -> dict[str, Any]:
+        if not self.is_configured:
+            return {"ok": False, "error": "Supabase config is missing."}
+
+        clean_provider = str(provider or "").strip().lower()
+        clean_id_token = str(id_token or "").strip()
+        clean_nonce = str(nonce or "").strip()
+        if clean_provider not in {"apple", "google"}:
+            return {"ok": False, "error": "Unsupported identity token provider."}
+        if not clean_id_token:
+            return {"ok": False, "error": "Missing identity token."}
+
+        url = f"{self.supabase_url}/auth/v1/token?grant_type=id_token"
+        payload = {
+            "provider": clean_provider,
+            "id_token": clean_id_token,
+        }
+        if clean_nonce:
+            payload["nonce"] = clean_nonce
+
+        try:
+            resp = requests.post(url, json=payload, headers=self._headers(), timeout=self.timeout_sec)
+        except Exception as exc:
+            return {"ok": False, "error": f"Network error: {exc}"}
+
+        data = self._json_or_text(resp)
+        if resp.status_code >= 400:
+            return self._error_result(resp, data, ("msg", "error_description", "error"))
+
+        return {
+            "ok": True,
+            "user": data.get("user") if isinstance(data, dict) else None,
+            "access_token": data.get("access_token") if isinstance(data, dict) else None,
+            "refresh_token": data.get("refresh_token") if isinstance(data, dict) else None,
+            "raw": data,
+        }
+
     def request_password_reset(self, email: str) -> dict[str, Any]:
         if not self.is_configured:
             return {"ok": False, "error": "Supabase config is missing."}

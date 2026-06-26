@@ -71,6 +71,46 @@ def test_exchange_pkce_code_uses_pkce_token_endpoint(monkeypatch):
     assert captured["timeout"] == 9
 
 
+def test_sign_in_with_id_token_uses_supabase_id_token_endpoint(monkeypatch):
+    captured = {}
+
+    class TokenResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "user": {"id": "user-123", "email": "user@example.com"},
+            }
+
+    def fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return TokenResponse()
+
+    monkeypatch.setattr("services.supabase_sync.requests.post", fake_post)
+
+    client = SupabaseSyncClient("https://example.supabase.co", "anon-key", timeout_sec=9)
+    result = client.sign_in_with_id_token("apple", "identity-token", nonce="raw-nonce")
+
+    assert result["ok"] is True
+    assert result["access_token"] == "access-token"
+    assert result["refresh_token"] == "refresh-token"
+    assert result["user"]["id"] == "user-123"
+    assert captured["url"] == "https://example.supabase.co/auth/v1/token?grant_type=id_token"
+    assert captured["json"] == {
+        "provider": "apple",
+        "id_token": "identity-token",
+        "nonce": "raw-nonce",
+    }
+    assert captured["headers"]["apikey"] == "anon-key"
+    assert captured["timeout"] == 9
+
+
 def test_exchange_pkce_code_returns_status_code_and_raw_error(monkeypatch):
     class TokenResponse:
         status_code = 400

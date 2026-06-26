@@ -458,6 +458,25 @@ def test_same_tab_oauth_button_renders_self_target(monkeypatch):
     assert captured["unsafe_allow_html"] is True
 
 
+def test_native_apple_button_uses_ios_bridge_scheme(monkeypatch):
+    fake_st = _FakeSt()
+    captured = {}
+
+    def fake_markdown(markup, unsafe_allow_html=False):
+        captured["markup"] = markup
+        captured["unsafe_allow_html"] = unsafe_allow_html
+
+    fake_st.markdown = fake_markdown
+    monkeypatch.setattr(settings_page, "st", fake_st)
+
+    settings_page._render_native_apple_sign_in_button("Continue with Apple")
+
+    assert 'target="_self"' in captured["markup"]
+    assert "goushfi://native-apple-sign-in" in captured["markup"]
+    assert "Continue with Apple" in captured["markup"]
+    assert captured["unsafe_allow_html"] is True
+
+
 def test_native_shell_apple_oauth_uses_implicit_flow(monkeypatch):
     fake_st = _FakeSt()
     fake_st.query_params = {"f_shell": "1"}

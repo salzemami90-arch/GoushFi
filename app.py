@@ -249,6 +249,17 @@ def _clear_oauth_query_params() -> None:
         "error_description",
         "cloud_oauth",
         "cloud_pkce_state",
+        "native_apple",
+        "native_identity_token",
+        "native_id_token",
+        "native_nonce",
+        "native_authorization_code",
+        "native_email",
+        "native_full_name",
+        "native_apple_error",
+        "native_error",
+        "native_error_code",
+        "native_error_description",
     }
     try:
         remaining = {
@@ -261,6 +272,150 @@ def _clear_oauth_query_params() -> None:
             st.query_params[key] = value
     except Exception:
         pass
+
+
+def _handle_native_apple_sign_in_callback() -> None:
+    native_flag = _query_param_value("native_apple")
+    identity_token = _query_param_value("native_identity_token") or _query_param_value("native_id_token")
+    native_error = (
+        _query_param_value("native_error_description")
+        or _query_param_value("native_apple_error")
+        or _query_param_value("native_error")
+    )
+    if native_flag != "1" and not identity_token and not native_error:
+        return
+
+    st.session_state["current_page"] = "settings"
+    st.session_state["settings_view"] = "data"
+
+    if native_error:
+        error_code = _query_param_value("native_error_code")
+        detail = _record_cloud_oauth_error(
+            "native_apple_authorization",
+            {
+                "ok": False,
+                "error": native_error,
+                "code": error_code,
+                "status": "",
+                "raw": {
+                    "native_error_code": error_code,
+                    "native_error_description": native_error,
+                },
+            },
+        )
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": f"لم يكتمل تسجيل الدخول الأصلي بأبل: {native_error}",
+            "en": f"Native Apple sign-in did not complete: {native_error}",
+            "detail": detail,
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    nonce = _query_param_value("native_nonce")
+    if not identity_token or not nonce:
+        detail = _record_cloud_oauth_error(
+            "native_apple_token_missing",
+            {"ok": False, "error": "Native Apple sign-in returned an incomplete token payload."},
+            identity_token_present=bool(identity_token),
+            nonce_present=bool(nonce),
+            authorization_code_present=bool(_query_param_value("native_authorization_code")),
+        )
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "رجع Apple من الآيفون، لكن بيانات الدخول ناقصة. جربي مرة ثانية.",
+            "en": "Apple returned from iPhone, but the sign-in data was incomplete. Try again.",
+            "detail": detail,
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
+    if not client.is_configured:
+        detail = _record_cloud_oauth_error(
+            "supabase_config_missing_native_apple",
+            {"ok": False, "error": "Supabase configuration is missing."},
+        )
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "إعدادات Supabase غير متاحة حاليًا.",
+            "en": "Supabase configuration is not available right now.",
+            "detail": detail,
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    exchange = client.sign_in_with_id_token("apple", identity_token, nonce=nonce)
+    if not exchange.get("ok"):
+        detail = _record_cloud_oauth_error(
+            "supabase_native_apple_id_token_exchange",
+            exchange,
+            native_authorization_code_present=bool(_query_param_value("native_authorization_code")),
+            native_email_present=bool(_query_param_value("native_email")),
+            native_full_name_present=bool(_query_param_value("native_full_name")),
+        )
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": f"تعذر ربط تسجيل Apple الأصلي بالسحابة: {exchange.get('error') or 'Apple token exchange failed'}",
+            "en": f"Could not connect native Apple sign-in to cloud: {exchange.get('error') or 'Apple token exchange failed'}",
+            "detail": detail,
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    access_token = str(exchange.get("access_token") or "")
+    refresh_token = str(exchange.get("refresh_token") or "")
+    user_obj = exchange.get("user") if isinstance(exchange.get("user"), dict) else {}
+    user_id = str(user_obj.get("id") or "")
+    email = str(user_obj.get("email") or _query_param_value("native_email"))
+
+    user_lookup_error = {}
+    if not user_id and access_token:
+        user_res = client.get_user(access_token)
+        if user_res.get("ok") and isinstance(user_res.get("user"), dict):
+            user_obj = user_res["user"]
+            user_id = str(user_obj.get("id") or "")
+            email = str(user_obj.get("email") or email)
+        elif not user_res.get("ok"):
+            user_lookup_error = user_res
+
+    if not refresh_token or not _apply_cloud_auth_session(
+        client,
+        email=email,
+        user_id=user_id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        reason_suffix="native_apple_sign_in",
+    ):
+        detail = _record_cloud_oauth_error(
+            "supabase_native_apple_session_incomplete",
+            user_lookup_error or {"ok": False, "error": "Native Apple session missing required fields."},
+            access_token_present=bool(access_token),
+            refresh_token_present=bool(refresh_token),
+            user_id_present=bool(user_id),
+            email_present=bool(email),
+        )
+        st.session_state["_cloud_oauth_notice"] = {
+            "type": "warning",
+            "ar": "رجع Apple من الآيفون، لكن بيانات الجلسة ناقصة. جربي تسجيل الدخول مرة ثانية.",
+            "en": "Apple returned from iPhone, but the session data was incomplete. Try signing in again.",
+            "detail": detail,
+        }
+        _clear_oauth_query_params()
+        st.rerun()
+
+    st.session_state["_cloud_cookie_restore_checked"] = True
+    st.session_state["_cloud_remember_login"] = True
+    st.session_state.pop("_cloud_oauth_last_callback_debug", None)
+    st.session_state.pop("_cloud_oauth_last_error_detail", None)
+    st.session_state.pop("_cloud_oauth_last_error_stack", None)
+    st.session_state["_cloud_oauth_notice"] = {
+        "type": "success",
+        "ar": "تم تسجيل الدخول بأبل من الآيفون وربط السحابة.",
+        "en": "Native Apple sign-in is connected to cloud sync.",
+    }
+    _clear_oauth_query_params()
+    st.rerun()
 
 
 def _handle_cloud_oauth_code_callback() -> None:
@@ -923,6 +1078,7 @@ def main():
     init_session_state()
     device_storage_payload, device_storage_ready = _read_device_state_browser_bridge()
     _restore_device_state_from_browser(device_storage_payload, device_storage_ready)
+    _handle_native_apple_sign_in_callback()
     _handle_cloud_oauth_code_callback()
     render_cloud_oauth_hash_capture_inline()
     render_cloud_oauth_callback_capture()
