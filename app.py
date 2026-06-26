@@ -181,6 +181,65 @@ def _query_param_value(name: str) -> str:
     return str(value or "").strip()
 
 
+_OAUTH_DEBUG_SENSITIVE_KEYS = {
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "identity_token",
+    "auth_code",
+    "code_verifier",
+    "password",
+    "secret",
+    "service_role_key",
+    "supabase_anon_key",
+    "apikey",
+    "authorization",
+}
+
+
+def _sanitize_oauth_debug(value, *, depth: int = 0):
+    if depth > 4:
+        return "[truncated]"
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            clean_key = str(key or "")
+            if any(marker in clean_key.lower() for marker in _OAUTH_DEBUG_SENSITIVE_KEYS):
+                sanitized[clean_key] = "[redacted]"
+            else:
+                sanitized[clean_key] = _sanitize_oauth_debug(item, depth=depth + 1)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_oauth_debug(item, depth=depth + 1) for item in value[:12]]
+    if isinstance(value, tuple):
+        return [_sanitize_oauth_debug(item, depth=depth + 1) for item in value[:12]]
+    if isinstance(value, str):
+        return value[:1200]
+    return value
+
+
+def _record_cloud_oauth_error(stage: str, result: dict | None = None, **extra) -> str:
+    result = result if isinstance(result, dict) else {}
+    detail = {
+        "stage": str(stage or "unknown"),
+        "message": str(result.get("error") or extra.get("message") or "").strip(),
+        "code": str(result.get("code") or extra.get("code") or "").strip(),
+        "status": result.get("status") or extra.get("status") or "",
+        "extra": _sanitize_oauth_debug(extra),
+        "raw": _sanitize_oauth_debug(result.get("raw")),
+    }
+    detail = {key: value for key, value in detail.items() if value not in ("", None, {}, [])}
+    try:
+        detail_text = json.dumps(detail, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        detail_text = str(detail)
+    st.session_state["_cloud_oauth_last_error_detail"] = detail_text
+    st.session_state["_cloud_oauth_last_error_stack"] = "".join(traceback.format_stack(limit=8))
+    print(f"GoushFi OAuth error: {detail_text}", flush=True)
+    print(st.session_state["_cloud_oauth_last_error_stack"], flush=True)
+    return detail_text
+
+
 def _clear_oauth_query_params() -> None:
     remove_keys = {
         "code",
@@ -218,10 +277,26 @@ def _handle_cloud_oauth_code_callback() -> None:
     st.session_state["settings_view"] = "data"
 
     if auth_error:
+        error_code = _query_param_value("error_code")
+        detail = _record_cloud_oauth_error(
+            "apple_oauth_callback",
+            {
+                "ok": False,
+                "error": auth_error,
+                "code": error_code or _query_param_value("error"),
+                "status": "",
+                "raw": {
+                    "error": _query_param_value("error"),
+                    "error_code": error_code,
+                    "error_description": auth_error,
+                },
+            },
+        )
         st.session_state["_cloud_oauth_notice"] = {
             "type": "warning",
             "ar": f"لم يكتمل تسجيل الدخول بأبل: {auth_error}",
             "en": f"Apple sign-in did not complete: {auth_error}",
+            "detail": detail,
         }
         _clear_oauth_query_params()
         st.rerun()
@@ -245,30 +320,47 @@ def _handle_cloud_oauth_code_callback() -> None:
     }
 
     if not code_verifier:
+        detail = _record_cloud_oauth_error(
+            "pkce_verifier_missing",
+            {"ok": False, "error": "Missing OAuth code verifier."},
+            callback_debug=st.session_state.get("_cloud_oauth_last_callback_debug"),
+        )
         st.session_state["_cloud_oauth_notice"] = {
             "type": "warning",
             "ar": "رجع Apple برمز الدخول، لكن انتهت جلسة التحقق المؤقتة. جربي زر Apple مرة ثانية.",
             "en": "Apple returned with a sign-in code, but the temporary verification session expired. Try the Apple button again.",
+            "detail": detail,
         }
         _clear_oauth_query_params()
         st.rerun()
 
     client = SupabaseSyncClient.from_runtime(getattr(st, "secrets", None))
     if not client.is_configured:
+        detail = _record_cloud_oauth_error(
+            "supabase_config_missing",
+            {"ok": False, "error": "Supabase configuration is missing."},
+        )
         st.session_state["_cloud_oauth_notice"] = {
             "type": "warning",
             "ar": "إعدادات Supabase غير متاحة حاليًا.",
             "en": "Supabase configuration is not available right now.",
+            "detail": detail,
         }
         _clear_oauth_query_params()
         st.rerun()
 
     exchange = client.exchange_pkce_code(auth_code, code_verifier)
     if not exchange.get("ok"):
+        detail = _record_cloud_oauth_error(
+            "supabase_pkce_exchange",
+            exchange,
+            callback_debug=st.session_state.get("_cloud_oauth_last_callback_debug"),
+        )
         st.session_state["_cloud_oauth_notice"] = {
             "type": "warning",
             "ar": f"تعذر إكمال تسجيل الدخول بأبل: {exchange.get('error') or 'OAuth failed'}",
             "en": f"Could not finish Apple sign-in: {exchange.get('error') or 'OAuth failed'}",
+            "detail": detail,
         }
         _clear_oauth_query_params()
         st.rerun()
@@ -279,12 +371,15 @@ def _handle_cloud_oauth_code_callback() -> None:
     user_id = str(user_obj.get("id") or "")
     email = str(user_obj.get("email") or "")
 
+    user_lookup_error = {}
     if not user_id and access_token:
         user_res = client.get_user(access_token)
         if user_res.get("ok") and isinstance(user_res.get("user"), dict):
             user_obj = user_res["user"]
             user_id = str(user_obj.get("id") or "")
             email = str(user_obj.get("email") or email)
+        elif not user_res.get("ok"):
+            user_lookup_error = user_res
 
     if not refresh_token or not _apply_cloud_auth_session(
         client,
@@ -294,10 +389,19 @@ def _handle_cloud_oauth_code_callback() -> None:
         refresh_token=refresh_token,
         reason_suffix="sign_in",
     ):
+        detail = _record_cloud_oauth_error(
+            "supabase_session_incomplete",
+            user_lookup_error or {"ok": False, "error": "OAuth session missing required fields."},
+            access_token_present=bool(access_token),
+            refresh_token_present=bool(refresh_token),
+            user_id_present=bool(user_id),
+            email_present=bool(email),
+        )
         st.session_state["_cloud_oauth_notice"] = {
             "type": "warning",
             "ar": "رجعنا من Apple، لكن بيانات الجلسة ناقصة. جربي تسجيل الدخول مرة ثانية.",
             "en": "Apple returned, but the session data was incomplete. Try signing in again.",
+            "detail": detail,
         }
         _clear_oauth_query_params()
         st.rerun()
@@ -306,6 +410,8 @@ def _handle_cloud_oauth_code_callback() -> None:
     st.session_state["_cloud_remember_login"] = True
     forget_pkce_flow(st.session_state)
     st.session_state.pop("_cloud_oauth_last_callback_debug", None)
+    st.session_state.pop("_cloud_oauth_last_error_detail", None)
+    st.session_state.pop("_cloud_oauth_last_error_stack", None)
     st.session_state["_cloud_oauth_notice"] = {
         "type": "success",
         "ar": "تم تسجيل الدخول بأبل وربط السحابة.",

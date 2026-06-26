@@ -415,9 +415,9 @@ def render_cloud_oauth_hash_capture_inline() -> None:
           }}
 
           const wins = collectWindows();
-          const sourceWin = wins.find((targetWin) => /(?:^#|&)refresh_token=/.test(windowHash(targetWin)));
+          const sourceWin = wins.find((targetWin) => /(?:^#|&)(refresh_token|error|error_code|error_description)=/.test(windowHash(targetWin)));
           const hashValue = windowHash(sourceWin || window);
-          if (!/(?:^#|&)refresh_token=/.test(hashValue)) {{
+          if (!/(?:^#|&)(refresh_token|error|error_code|error_description)=/.test(hashValue)) {{
             return;
           }}
 
@@ -425,6 +425,29 @@ def render_cloud_oauth_hash_capture_inline() -> None:
           const storageName = {storage_name};
           const maxAge = {cookie_max_age};
           const params = new URLSearchParams(hashValue.replace(/^#/, ""));
+          const oauthError = String(params.get("error_description") || params.get("error") || "").trim();
+          if (oauthError) {{
+            const targetWin = sourceWin || window;
+            try {{
+              const cleanUrl = new URL(String(targetWin.location.href || window.location.href || ""));
+              cleanUrl.hash = "";
+              cleanUrl.searchParams.set("page", "settings");
+              cleanUrl.searchParams.set("cloud_oauth", "apple");
+              cleanUrl.searchParams.set("error", String(params.get("error") || "oauth_error"));
+              cleanUrl.searchParams.set("error_description", oauthError);
+              const errorCode = String(params.get("error_code") || "").trim();
+              if (errorCode) {{
+                cleanUrl.searchParams.set("error_code", errorCode);
+              }}
+              targetWin.location.replace(cleanUrl.toString());
+            }} catch (error) {{
+              try {{
+                targetWin.location.hash = "";
+              }} catch (nestedError) {{}}
+            }}
+            return;
+          }}
+
           const refreshToken = String(params.get("refresh_token") || "").trim();
           if (!refreshToken) {{
             return;

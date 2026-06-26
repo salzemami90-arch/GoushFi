@@ -69,3 +69,30 @@ def test_exchange_pkce_code_uses_pkce_token_endpoint(monkeypatch):
     assert captured["json"] == {"auth_code": "auth-code", "code_verifier": "code-verifier"}
     assert captured["headers"]["apikey"] == "anon-key"
     assert captured["timeout"] == 9
+
+
+def test_exchange_pkce_code_returns_status_code_and_raw_error(monkeypatch):
+    class TokenResponse:
+        status_code = 400
+
+        @staticmethod
+        def json():
+            return {
+                "error": "invalid_grant",
+                "error_code": "bad_oauth_callback",
+                "error_description": "Invalid redirect URI",
+            }
+
+    def fake_post(url, json, headers, timeout):
+        return TokenResponse()
+
+    monkeypatch.setattr("services.supabase_sync.requests.post", fake_post)
+
+    client = SupabaseSyncClient("https://example.supabase.co", "anon-key")
+    result = client.exchange_pkce_code("auth-code", "code-verifier")
+
+    assert result["ok"] is False
+    assert result["status"] == 400
+    assert result["code"] == "bad_oauth_callback"
+    assert result["error"] == "Invalid redirect URI"
+    assert result["raw"]["error"] == "invalid_grant"

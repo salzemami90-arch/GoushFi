@@ -144,9 +144,12 @@ def test_render_cloud_oauth_hash_capture_inline_reads_parent_location_hash(monke
     assert "collectWindows" in html
     assert "refresh_token" in html
     assert "access_token" in html
+    assert "error_description" in html
+    assert "cloud_oauth" in html
     assert "storage.setItem(storageName, encodedPayload)" in html
     assert "targetDoc.cookie" in html
     assert "targetWin.history.replaceState" in html
+    assert "targetWin.location.replace(cleanUrl.toString())" in html
     assert "targetWin.location.reload" in html
     assert captured["height"] == 0
     assert captured["width"] == 0

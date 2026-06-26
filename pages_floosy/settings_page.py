@@ -902,6 +902,9 @@ def render():
                 st.success(notice_text)
             elif notice_type == "warning":
                 st.warning(notice_text)
+                oauth_detail = str(oauth_notice.get("detail") or st.session_state.get("_cloud_oauth_last_error_detail") or "").strip()
+                if oauth_detail:
+                    st.caption(oauth_detail)
                 oauth_debug = st.session_state.get("_cloud_oauth_last_callback_debug")
                 if isinstance(oauth_debug, dict) and _runtime_flag_enabled("FLOOSY_OAUTH_DEBUG", "OAUTH_DEBUG"):
                     st.caption(
