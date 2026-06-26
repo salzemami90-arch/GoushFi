@@ -11,6 +11,7 @@ from services.i18n import dashboard_brief_copy, format_i18n, make_t, get_lang_co
 from repositories.session_repo import SessionStateRepository
 from services.cash_flow_engine import CashFlowEngine
 from services.financial_analyzer import FinancialAnalyzer
+from services.ai_insights_service import AIInsightsService
 from services.transaction_categories import category_label
 
 
@@ -284,6 +285,91 @@ def _render_action_card(title: str, value_text: str, delta_text: str, net_value:
     )
 
 
+def _build_ai_cash_flow_context(
+    *,
+    month_key: str,
+    currency_view: str,
+    current: dict,
+    comparison: dict,
+    coverage: dict,
+    cash_flow: dict,
+    savings: dict,
+    project: dict,
+    docs: dict,
+    seasonal: dict,
+    category_signal: dict,
+    brief: dict,
+) -> dict:
+    return {
+        "month_key": month_key,
+        "currency": currency_view,
+        "current_month": current,
+        "month_comparison": comparison,
+        "recurring_coverage": coverage,
+        "cash_flow_90d": {
+            "as_of": cash_flow.get("as_of"),
+            "forecast_until": cash_flow.get("forecast_until"),
+            "actual_last_90": cash_flow.get("actual_last_90", {}),
+            "projected_next_90": cash_flow.get("projected_next_90", {}),
+            "components": cash_flow.get("components", {}),
+            "comparison_vs_last_90": cash_flow.get("comparison_vs_last_90", {}),
+            "carry_over": cash_flow.get("carry_over", {}),
+            "monthly_projection": cash_flow.get("monthly_projection", [])[:6],
+            "upcoming_items": cash_flow.get("upcoming_items", [])[:8],
+        },
+        "savings": savings,
+        "projects": project,
+        "documents": docs,
+        "seasonal_expense": seasonal,
+        "category_signal": category_signal,
+        "deterministic_brief": brief,
+    }
+
+
+def _render_ai_result_list(title: str, rows: list[str]) -> None:
+    if not rows:
+        return
+    st.markdown(f"**{title}**")
+    for row in rows[:5]:
+        st.write(f"- {row}")
+
+
+def _render_ai_cash_flow_result(result: dict, t) -> None:
+    if not result:
+        return
+
+    if not result.get("ok"):
+        st.warning(
+            t(
+                "تعذر توليد التقرير الذكي حاليًا.",
+                "Could not generate the AI brief right now.",
+            )
+        )
+        if result.get("error"):
+            st.caption(str(result.get("error")))
+        return
+
+    summary = str(result.get("summary") or "").strip()
+    if summary:
+        st.info(summary)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        _render_ai_result_list(t("المخاطر", "Risks"), result.get("risks", []))
+        _render_ai_result_list(t("الفرص", "Opportunities"), result.get("opportunities", []))
+    with c2:
+        _render_ai_result_list(t("الخطوات التالية", "Next Actions"), result.get("next_actions", []))
+        _render_ai_result_list(t("نواقص البيانات", "Data Gaps"), result.get("data_gaps", []))
+
+    confidence = str(result.get("confidence") or "low").strip()
+    confidence_label = {
+        "low": t("منخفضة", "Low"),
+        "medium": t("متوسطة", "Medium"),
+        "high": t("عالية", "High"),
+    }.get(confidence, confidence)
+    st.caption(t(f"ثقة التحليل: {confidence_label}", f"Analysis confidence: {confidence_label}"))
+
+
 def render(month_key: str, month: str, year: int):
     _lc = get_lang_code()
     is_en = _lc == "en"
@@ -393,6 +479,54 @@ def render(month_key: str, month: str, year: int):
             t(
                 "بيانات محدودة — ستتحسن الرؤى بإضافة المزيد من المعاملات.",
                 "Limited data — insights will improve as you add more transactions.",
+            )
+        )
+
+    ai_context = _build_ai_cash_flow_context(
+        month_key=month_key,
+        currency_view=currency_view,
+        current=current,
+        comparison=comparison,
+        coverage=coverage,
+        cash_flow=cash_flow,
+        savings=savings,
+        project=project,
+        docs=docs,
+        seasonal=seasonal,
+        category_signal=category_signal,
+        brief=brief,
+    )
+    ai_snapshot = AIInsightsService.context_snapshot(ai_context)
+    ai_service = AIInsightsService.from_runtime(getattr(st, "secrets", None))
+    stored_ai = st.session_state.get("_ai_cash_flow_brief", {})
+    if not isinstance(stored_ai, dict):
+        stored_ai = {}
+
+    st.markdown(f"### {t('التقرير الذكي', 'AI Brief')}")
+    if not ai_service.is_configured:
+        st.caption(
+            t(
+                "المساعد الذكي غير مفعّل في هذه البيئة. أضف OPENAI_API_KEY لتشغيل التقرير الذكي.",
+                "AI brief is not configured in this environment. Add OPENAI_API_KEY to enable it.",
+            )
+        )
+    else:
+        if st.button(t("توليد تقرير ذكي", "Generate AI Brief"), key="generate_ai_cash_flow_brief", use_container_width=True):
+            with st.spinner(t("جاري توليد التقرير...", "Generating brief...")):
+                ai_result = ai_service.generate_cash_flow_brief(ai_context, language=_lc)
+            st.session_state["_ai_cash_flow_brief"] = {
+                "snapshot": ai_snapshot,
+                "result": ai_result,
+            }
+            stored_ai = st.session_state["_ai_cash_flow_brief"]
+
+    if stored_ai.get("snapshot") == ai_snapshot:
+        _render_ai_cash_flow_result(stored_ai.get("result", {}), t)
+    elif stored_ai.get("result"):
+        st.caption(
+            t(
+                "تغيرت البيانات منذ آخر تقرير ذكي. ولّد تقريرًا جديدًا للحصول على قراءة محدثة.",
+                "Data changed since the last AI brief. Generate a new brief for an updated read.",
             )
         )
 

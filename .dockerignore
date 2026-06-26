@@ -6,6 +6,12 @@ __pycache__
 .streamlit/secrets.toml
 e2e_tests/
 tests/
+data/*.json
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+data/*.tmp
+data/*.backup-*
 *.md
 !PRIVACY_POLICY.md
 requirements-dev.txt

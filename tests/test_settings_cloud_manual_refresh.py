@@ -484,6 +484,10 @@ def test_native_shell_apple_oauth_uses_implicit_flow(monkeypatch):
 
     assert settings_page._native_shell_oauth_uses_implicit_flow() is True
 
+    fake_st.query_params = {"f_shell": "1", "f_platform": "android"}
+
+    assert settings_page._native_shell_oauth_uses_implicit_flow() is False
+
     fake_st.query_params = {}
 
     assert settings_page._native_shell_oauth_uses_implicit_flow() is False

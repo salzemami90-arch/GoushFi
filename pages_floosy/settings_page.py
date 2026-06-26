@@ -38,7 +38,7 @@ from services.supabase_sync import SupabaseSyncClient
 
 
 KUWAIT_TZ = timezone(timedelta(hours=3), name="Asia/Kuwait")
-WEB_BUILD_MARKER = "2026-06-26-native-apple-1"
+WEB_BUILD_MARKER = "2026-06-26-android-wrapper-1"
 
 
 def _currency_option_label(value: str, lang_code: str) -> str:
@@ -342,7 +342,10 @@ def _cloud_apple_sign_in_enabled() -> bool:
 
 def _native_shell_oauth_uses_implicit_flow() -> bool:
     try:
-        return str(st.query_params.get("f_shell", "") or "").strip() == "1"
+        if str(st.query_params.get("f_shell", "") or "").strip() != "1":
+            return False
+        platform = str(st.query_params.get("f_platform", "") or "").strip().lower()
+        return platform not in {"android", "android-webview", "goushfi-android"}
     except Exception:
         return False
 
@@ -398,6 +401,9 @@ def _cloud_oauth_redirect_url(lang_code: str, pkce_state: str = "") -> str:
     query_items["f_lang"] = str(lang_code or "ar")
     if str(st.query_params.get("f_shell", "") or "").strip() == "1":
         query_items["f_shell"] = "1"
+        platform = str(st.query_params.get("f_platform", "") or "").strip()
+        if platform:
+            query_items["f_platform"] = platform
 
     clean_path = parts.path or "/"
     return urlunsplit((parts.scheme, parts.netloc, clean_path, urlencode(query_items), ""))

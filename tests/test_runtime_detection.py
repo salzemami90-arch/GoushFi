@@ -169,6 +169,7 @@ class RuntimeDetectionTests(unittest.TestCase):
             query_params={
                 "page": "tax",
                 "f_shell": "1",
+                "f_platform": "android",
                 "f_w": "1",
                 "f_lang": "en",
             },
@@ -180,6 +181,7 @@ class RuntimeDetectionTests(unittest.TestCase):
 
         self.assertEqual(fake_st.query_params["page"], "tax")
         self.assertEqual(fake_st.query_params["f_shell"], "1")
+        self.assertEqual(fake_st.query_params["f_platform"], "android")
 
     def test_regular_web_deep_link_is_cleared_after_initial_use(self):
         fake_st = SimpleNamespace(
