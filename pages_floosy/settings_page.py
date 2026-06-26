@@ -38,6 +38,7 @@ from services.supabase_sync import SupabaseSyncClient
 
 
 KUWAIT_TZ = timezone(timedelta(hours=3), name="Asia/Kuwait")
+WEB_BUILD_MARKER = "2026-06-26-oauth-diagnostics-2"
 
 
 def _currency_option_label(value: str, lang_code: str) -> str:
@@ -884,6 +885,7 @@ def render():
     _render_pending_cloud_auth_clear()
     _render_settings_shell_css()
     st.title(t("إعدادات GoushFi", "GoushFi Settings"))
+    st.caption(f"Web build: {WEB_BUILD_MARKER}")
     if st.session_state.pop("_cloud_signout_notice", False):
         st.success(t("تم تسجيل الخروج.", "Signed out."))
     if st.session_state.pop("_fresh_start_notice", False):
@@ -1197,6 +1199,7 @@ def render():
             with version_col:
                 st.caption(t("الإصدار", "Version"))
                 st.markdown("**Beta 1.0**")
+                st.caption(f"Web build: {WEB_BUILD_MARKER}")
             with plan_col:
                 st.caption(t("الخطة الحالية", "Current Plan"))
                 st.markdown(f"**{tier_label}**")
