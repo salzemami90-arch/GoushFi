@@ -460,6 +460,31 @@ def _apply_language_direction_theme() -> None:
         }
         """
 
+    hidden_bridge_css = """
+        [data-testid="stCustomComponentV1"],
+        [data-testid="stIFrame"],
+        .stCustomComponentV1,
+        div[class*="stCustomComponent"],
+        iframe[title*="cloud_auth_browser_bridge"],
+        iframe[title*="device_state_browser_bridge"],
+        iframe[title*="st.iframe"] {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+    """
+
     st.markdown(
         f"""
         <style>
@@ -552,6 +577,7 @@ def _apply_language_direction_theme() -> None:
         }}
 
         {sidebar_side_css}
+        {hidden_bridge_css}
         {shell_chrome_css}
 
         section[data-testid="stSidebar"][aria-expanded="false"],
