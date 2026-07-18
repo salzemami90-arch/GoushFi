@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from hashlib import sha256
 from typing import Any, Callable
 
@@ -26,6 +27,8 @@ SENSITIVE_KEY_FRAGMENTS = {
     "profile_image",
 }
 
+DEFAULT_OPENAI_MODEL = "gpt-5.6"
+
 DEFAULT_RESULT = {
     "ok": False,
     "summary": "",
@@ -35,6 +38,23 @@ DEFAULT_RESULT = {
     "data_gaps": [],
     "confidence": "low",
     "error": "",
+}
+
+DEFAULT_CALM_RESULT = {
+    "ok": False,
+    "explanations": {},
+    "error": "",
+}
+
+NUMBER_WORDS = {
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+    "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+    "eighty", "ninety", "hundred", "thousand", "million", "billion", "percent", "percentage",
+    "صفر", "واحد", "واحدة", "اثنان", "اثنين", "اثنتان", "اثنتين", "ثلاثة", "ثلاث",
+    "أربعة", "اربعة", "أربع", "اربع", "خمسة", "خمس", "ستة", "ست", "سبعة", "سبع",
+    "ثمانية", "ثمان", "تسعة", "تسع", "عشرة", "عشر", "مئة", "مائة", "ألف", "الف",
+    "مليون", "مليار", "بالمئة", "نسبة",
 }
 
 
@@ -106,13 +126,13 @@ class AIInsightsService:
         self,
         api_key: str = "",
         *,
-        model: str = "gpt-4o-mini",
+        model: str = DEFAULT_OPENAI_MODEL,
         api_url: str = "https://api.openai.com/v1/chat/completions",
         timeout_sec: int = 25,
         post_func: Callable[..., Any] | None = None,
     ):
         self.api_key = str(api_key or "").strip()
-        self.model = str(model or "gpt-4o-mini").strip()
+        self.model = str(model or DEFAULT_OPENAI_MODEL).strip()
         self.api_url = str(api_url or "https://api.openai.com/v1/chat/completions").strip()
         self.timeout_sec = int(timeout_sec or 25)
         self._post = post_func or requests.post
@@ -138,7 +158,7 @@ class AIInsightsService:
 
         return cls(
             api_key or os.getenv("OPENAI_API_KEY", ""),
-            model=model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            model=model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
             api_url=api_url or os.getenv("OPENAI_API_URL", "https://api.openai.com/v1/chat/completions"),
         )
 
@@ -223,6 +243,133 @@ class AIInsightsService:
                 clean_content = clean_content[4:].strip()
         parsed = json.loads(clean_content)
         return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _explanation_contains_number(text: str) -> bool:
+        clean_text = str(text or "")
+        if re.search(r"[0-9\u0660-\u0669\u06F0-\u06F9]", clean_text):
+            return True
+        words = {
+            word.casefold()
+            for word in re.findall(r"[A-Za-z\u0600-\u06FF]+", clean_text)
+        }
+        return bool(words.intersection(NUMBER_WORDS))
+
+    @classmethod
+    def validate_calm_explanations(cls, raw: Any, expected_ids: list[str]) -> dict:
+        result = DEFAULT_CALM_RESULT.copy()
+        if not isinstance(raw, dict) or not isinstance(raw.get("explanations"), list):
+            result["error"] = "AI response did not match the calm brief contract."
+            return result
+
+        rows = raw["explanations"]
+        if len(rows) != len(expected_ids):
+            result["error"] = "AI response did not return the expected decisions."
+            return result
+
+        explanations: dict[str, str] = {}
+        received_ids: list[str] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                result["error"] = "AI response included an invalid explanation."
+                return result
+            decision_id = str(row.get("decision_id") or "").strip()
+            explanation = str(row.get("explanation") or "").strip()
+            if decision_id not in expected_ids or decision_id in explanations or not explanation:
+                result["error"] = "AI response included an unknown or duplicate decision."
+                return result
+            # Only user-facing explanation copy is checked. Technical digits in
+            # decision_id or the JSON envelope are intentionally allowed.
+            if cls._explanation_contains_number(explanation):
+                result["error"] = "AI explanation included a number."
+                return result
+            explanations[decision_id] = explanation
+            received_ids.append(decision_id)
+
+        if received_ids != expected_ids:
+            result["error"] = "AI response changed the deterministic decision order."
+            return result
+
+        return {
+            "ok": True,
+            "explanations": explanations,
+            "error": "",
+        }
+
+    def generate_financial_calm_explanations(self, brief: dict, *, language: str = "ar") -> dict:
+        expected_ids = [
+            str(item.get("decision_id") or "").strip()
+            for item in brief.get("decisions", [])
+            if isinstance(item, dict)
+        ]
+        if len(expected_ids) != 3 or len(set(expected_ids)) != 3 or any(not item for item in expected_ids):
+            result = DEFAULT_CALM_RESULT.copy()
+            result["error"] = "The deterministic brief must contain exactly three decisions."
+            return result
+
+        if not self.is_configured:
+            result = DEFAULT_CALM_RESULT.copy()
+            result["error"] = "AI is not configured."
+            return result
+
+        lang = "English" if str(language or "").lower().startswith("en") else "Arabic"
+        sanitized_brief = self.sanitize_context(brief)
+        prompt = (
+            "You explain a deterministic Financial Calm Brief for GoushFi. "
+            "Python has already selected the decisions and owns every financial fact and number. "
+            f"Respond in {lang}. Return strict JSON with exactly one key named explanations. "
+            "explanations must be an array with exactly one object for each supplied decision. "
+            "Each object must contain exactly decision_id and explanation. "
+            "Copy decision_id exactly, including any technical digits it may contain. "
+            "In explanation, do not write digits, number words, amounts, percentages, dates, counts, "
+            "currencies, ranges, or new financial facts. Explain only why the supplied decision matters. "
+            "Do not add, remove, merge, reorder, or rename decisions.\n\n"
+            f"Deterministic brief:\n{json.dumps(sanitized_brief, ensure_ascii=False, default=str)}"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Return JSON only. Never put quantities in user-facing explanation text.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+
+        try:
+            response = self._post(self.api_url, headers=headers, json=payload, timeout=self.timeout_sec)
+        except Exception as exc:
+            result = DEFAULT_CALM_RESULT.copy()
+            result["error"] = f"Network error: {exc}"
+            return result
+
+        try:
+            status_code = int(getattr(response, "status_code", 0) or 0)
+        except Exception:
+            status_code = 0
+        if status_code >= 400 or status_code == 0:
+            result = DEFAULT_CALM_RESULT.copy()
+            result["error"] = f"AI request failed with status {status_code}."
+            return result
+
+        try:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return self.validate_calm_explanations(
+                self._parse_model_json(content),
+                expected_ids,
+            )
+        except Exception as exc:
+            result = DEFAULT_CALM_RESULT.copy()
+            result["error"] = f"Could not parse AI response: {exc}"
+            return result
 
     def generate_cash_flow_brief(self, context: dict, *, language: str = "ar") -> dict:
         if not self.is_configured:

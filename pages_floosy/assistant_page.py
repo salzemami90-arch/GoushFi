@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from datetime import date
 
 import pandas as pd
@@ -11,8 +12,20 @@ from services.i18n import dashboard_brief_copy, format_i18n, make_t, get_lang_co
 from repositories.session_repo import SessionStateRepository
 from services.cash_flow_engine import CashFlowEngine
 from services.financial_analyzer import FinancialAnalyzer
+from services.financial_calm_brief import FinancialCalmBriefEngine
 from services.ai_insights_service import AIInsightsService
-from services.transaction_categories import category_label
+from services.transaction_categories import CATEGORY_AR_TO_EN, CATEGORY_EN_TO_AR, category_label
+
+
+CALM_UI_EN = {
+    "title": "Financial Calm Brief",
+    "subtitle": "Only three decisions. Python calculates the numbers; AI explains why without changing them.",
+    "button": "Explain Decisions with AI",
+    "spinner": "Explaining decisions...",
+    "fallback": "Using the safe deterministic explanation. Add OPENAI_API_KEY for optional AI explanation.",
+    "stale": "Data changed; the updated deterministic explanation is shown.",
+    "rejected": "The AI response did not pass validation; the safe deterministic explanation is being used.",
+}
 
 
 def _previous_month_key(current_month: str, current_year: int) -> str:
@@ -285,89 +298,55 @@ def _render_action_card(title: str, value_text: str, delta_text: str, net_value:
     )
 
 
-def _build_ai_cash_flow_context(
+def _render_calm_decision_card(
+    decision: dict,
     *,
-    month_key: str,
+    explanation: str,
     currency_view: str,
-    current: dict,
-    comparison: dict,
-    coverage: dict,
-    cash_flow: dict,
-    savings: dict,
-    project: dict,
-    docs: dict,
-    seasonal: dict,
-    category_signal: dict,
-    brief: dict,
-) -> dict:
-    return {
-        "month_key": month_key,
-        "currency": currency_view,
-        "current_month": current,
-        "month_comparison": comparison,
-        "recurring_coverage": coverage,
-        "cash_flow_90d": {
-            "as_of": cash_flow.get("as_of"),
-            "forecast_until": cash_flow.get("forecast_until"),
-            "actual_last_90": cash_flow.get("actual_last_90", {}),
-            "projected_next_90": cash_flow.get("projected_next_90", {}),
-            "components": cash_flow.get("components", {}),
-            "comparison_vs_last_90": cash_flow.get("comparison_vs_last_90", {}),
-            "carry_over": cash_flow.get("carry_over", {}),
-            "monthly_projection": cash_flow.get("monthly_projection", [])[:6],
-            "upcoming_items": cash_flow.get("upcoming_items", [])[:8],
-        },
-        "savings": savings,
-        "projects": project,
-        "documents": docs,
-        "seasonal_expense": seasonal,
-        "category_signal": category_signal,
-        "deterministic_brief": brief,
+    is_en: bool,
+    is_ltr: bool,
+) -> None:
+    metric = decision.get("metric", {})
+    metric_value = float(metric.get("value", 0.0) or 0.0)
+    if metric.get("kind") == "count":
+        metric_text = html.escape(f"{int(metric_value):,}")
+    else:
+        metric_text = html.escape(f"{metric_value:,.2f} {currency_view}")
+
+    lang_key = "en" if is_en else "ar"
+    title = html.escape(str(decision.get(f"title_{lang_key}") or ""))
+    metric_label = html.escape(str(metric.get(f"label_{lang_key}") or ""))
+    safe_explanation = html.escape(str(explanation or ""))
+    action = html.escape(str(decision.get(f"action_{lang_key}") or ""))
+    tone_colors = {
+        "risk": {"border": "#C2410C", "bg": "#FFF7ED", "text": "#7C2D12"},
+        "attention": {"border": "#D97706", "bg": "#FFFBEB", "text": "#78350F"},
+        "calm": {"border": "#047857", "bg": "#ECFDF5", "text": "#064E3B"},
+        "neutral": {"border": "#64748B", "bg": "#F8FAFC", "text": "#334155"},
     }
+    colors = tone_colors.get(str(decision.get("tone") or "neutral"), tone_colors["neutral"])
+    accent_side = "border-left" if is_ltr else "border-right"
+    direction = "ltr" if is_ltr else "rtl"
+    text_align = "left" if is_ltr else "right"
 
-
-def _render_ai_result_list(title: str, rows: list[str]) -> None:
-    if not rows:
-        return
-    st.markdown(f"**{title}**")
-    for row in rows[:5]:
-        st.write(f"- {row}")
-
-
-def _render_ai_cash_flow_result(result: dict, t) -> None:
-    if not result:
-        return
-
-    if not result.get("ok"):
-        st.warning(
-            t(
-                "تعذر توليد التقرير الذكي حاليًا.",
-                "Could not generate the AI brief right now.",
-            )
-        )
-        if result.get("error"):
-            st.caption(str(result.get("error")))
-        return
-
-    summary = str(result.get("summary") or "").strip()
-    if summary:
-        st.info(summary)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        _render_ai_result_list(t("المخاطر", "Risks"), result.get("risks", []))
-        _render_ai_result_list(t("الفرص", "Opportunities"), result.get("opportunities", []))
-    with c2:
-        _render_ai_result_list(t("الخطوات التالية", "Next Actions"), result.get("next_actions", []))
-        _render_ai_result_list(t("نواقص البيانات", "Data Gaps"), result.get("data_gaps", []))
-
-    confidence = str(result.get("confidence") or "low").strip()
-    confidence_label = {
-        "low": t("منخفضة", "Low"),
-        "medium": t("متوسطة", "Medium"),
-        "high": t("عالية", "High"),
-    }.get(confidence, confidence)
-    st.caption(t(f"ثقة التحليل: {confidence_label}", f"Analysis confidence: {confidence_label}"))
+    st.markdown(
+        f"""
+        <div style="
+          min-height:265px;border:1px solid {colors['border']};{accent_side}:6px solid {colors['border']};
+          border-radius:16px;padding:16px;background:linear-gradient(145deg,{colors['bg']},#FFFFFF);
+          box-shadow:0 10px 24px rgba(15,23,42,0.06);direction:{direction};text-align:{text_align};
+        ">
+          <div style="font-size:1.02rem;font-weight:850;color:{colors['text']};line-height:1.35;">{title}</div>
+          <div style="margin-top:13px;font-size:1.45rem;font-weight:900;color:{colors['text']};">{metric_text}</div>
+          <div style="font-size:0.78rem;color:#64748B;margin-top:2px;">{metric_label}</div>
+          <div style="font-size:0.88rem;color:#334155;line-height:1.5;margin-top:13px;">{safe_explanation}</div>
+          <div style="font-size:0.82rem;color:{colors['text']};line-height:1.45;margin-top:13px;padding-top:10px;border-top:1px solid rgba(100,116,139,0.18);">
+            {action}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render(month_key: str, month: str, year: int):
@@ -389,6 +368,7 @@ def render(month_key: str, month: str, year: int):
     repo = SessionStateRepository()
     analyzer = FinancialAnalyzer(repo)
     cash_flow_engine = CashFlowEngine(repo)
+    calm_brief_engine = FinancialCalmBriefEngine()
 
     current_tx = load_transactions(month_key)
     previous_month_key = _previous_month_key(month, year)
@@ -422,6 +402,13 @@ def render(month_key: str, month: str, year: int):
     project_impact = analyzer.project_impact_on_personal(st.session_state, month_key, currency)
     seasonal = analyzer.seasonal_expense_summary(st.session_state, currency, limit_months=6)
     category_signal = analyzer.seasonal_category_signal(st.session_state, month_key, currency, history_months=6)
+    category_value = str(category_signal.get("top_category") or "").strip()
+    category_ar = CATEGORY_EN_TO_AR.get(category_value, category_value)
+    category_signal_for_calm = {
+        **category_signal,
+        "top_category_ar": category_ar,
+        "top_category_en": CATEGORY_AR_TO_EN.get(category_ar, category_value),
+    }
 
     # ── Zone A: AI Quick Take ─────────────────────────────────────────────
     brief = analyzer.dashboard_brief(st.session_state, month_key, currency)
@@ -482,53 +469,85 @@ def render(month_key: str, month: str, year: int):
             )
         )
 
-    ai_context = _build_ai_cash_flow_context(
+    calm_brief = calm_brief_engine.build(
         month_key=month_key,
-        currency_view=currency_view,
+        currency=currency_view,
         current=current,
         comparison=comparison,
         coverage=coverage,
         cash_flow=cash_flow,
         savings=savings,
-        project=project,
-        docs=docs,
         seasonal=seasonal,
-        category_signal=category_signal,
-        brief=brief,
+        category_signal=category_signal_for_calm,
     )
-    ai_snapshot = AIInsightsService.context_snapshot(ai_context)
+    calm_snapshot = AIInsightsService.context_snapshot(calm_brief)
     ai_service = AIInsightsService.from_runtime(getattr(st, "secrets", None))
-    stored_ai = st.session_state.get("_ai_cash_flow_brief", {})
+    stored_ai = st.session_state.get("_financial_calm_ai", {})
     if not isinstance(stored_ai, dict):
         stored_ai = {}
 
-    st.markdown(f"### {t('التقرير الذكي', 'AI Brief')}")
-    if not ai_service.is_configured:
-        st.caption(
-            t(
-                "المساعد الذكي غير مفعّل في هذه البيئة. أضف OPENAI_API_KEY لتشغيل التقرير الذكي.",
-                "AI brief is not configured in this environment. Add OPENAI_API_KEY to enable it.",
-            )
+    st.markdown(f"### {t('ملخص الهدوء المالي', CALM_UI_EN['title'])}")
+    st.caption(
+        t(
+            "ثلاثة قرارات فقط. Python يحسب الأرقام، والذكاء الاصطناعي يشرح السبب بدون تغييرها.",
+            CALM_UI_EN["subtitle"],
         )
-    else:
-        if st.button(t("توليد تقرير ذكي", "Generate AI Brief"), key="generate_ai_cash_flow_brief", use_container_width=True):
-            with st.spinner(t("جاري توليد التقرير...", "Generating brief...")):
-                ai_result = ai_service.generate_cash_flow_brief(ai_context, language=_lc)
-            st.session_state["_ai_cash_flow_brief"] = {
-                "snapshot": ai_snapshot,
+    )
+
+    if ai_service.is_configured:
+        if st.button(
+            t("اشرح القرارات بالذكاء الاصطناعي", CALM_UI_EN["button"]),
+            key="generate_financial_calm_explanations",
+            use_container_width=True,
+        ):
+            with st.spinner(t("جاري شرح القرارات...", CALM_UI_EN["spinner"])):
+                ai_result = ai_service.generate_financial_calm_explanations(
+                    calm_brief,
+                    language=_lc,
+                )
+            st.session_state["_financial_calm_ai"] = {
+                "snapshot": calm_snapshot,
                 "result": ai_result,
             }
-            stored_ai = st.session_state["_ai_cash_flow_brief"]
-
-    if stored_ai.get("snapshot") == ai_snapshot:
-        _render_ai_cash_flow_result(stored_ai.get("result", {}), t)
-    elif stored_ai.get("result"):
+            stored_ai = st.session_state["_financial_calm_ai"]
+    else:
         st.caption(
             t(
-                "تغيرت البيانات منذ آخر تقرير ذكي. ولّد تقريرًا جديدًا للحصول على قراءة محدثة.",
-                "Data changed since the last AI brief. Generate a new brief for an updated read.",
+                "يعمل الآن بالشرح الحتمي الآمن. أضيفي OPENAI_API_KEY لتفعيل الشرح الاختياري.",
+                CALM_UI_EN["fallback"],
             )
         )
+
+    ai_result = stored_ai.get("result", {}) if stored_ai.get("snapshot") == calm_snapshot else {}
+    ai_explanations = ai_result.get("explanations", {}) if ai_result.get("ok") else {}
+    if stored_ai.get("result") and stored_ai.get("snapshot") != calm_snapshot:
+        st.caption(
+            t(
+                "تغيرت البيانات؛ يظهر الآن الشرح الحتمي المحدث.",
+                CALM_UI_EN["stale"],
+            )
+        )
+    elif ai_result and not ai_result.get("ok"):
+        st.caption(
+            t(
+                "لم يجتز رد الذكاء الاصطناعي التحقق؛ تم استخدام الشرح الحتمي الآمن.",
+                CALM_UI_EN["rejected"],
+            )
+        )
+
+    decision_columns = st.columns(3)
+    for column, decision in zip(decision_columns, calm_brief.get("decisions", [])):
+        decision_id = str(decision.get("decision_id") or "")
+        fallback_key = "fallback_explanation_en" if _lc != "ar" else "fallback_explanation_ar"
+        explanation = str(ai_explanations.get(decision_id) or decision.get(fallback_key) or "")
+        with column:
+            _render_calm_decision_card(
+                decision,
+                explanation=explanation,
+                currency_view=currency_view,
+                is_en=_lc != "ar",
+                is_ltr=is_ltr,
+            )
 
     # ── Zone B: 3 Action Cards ────────────────────────────────────────────
     if brief_status != "empty":

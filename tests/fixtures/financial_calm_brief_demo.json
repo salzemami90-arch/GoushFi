@@ -1,0 +1,70 @@
+{
+  "scenario": "Build Week synthetic judging data",
+  "privacy": "Fictional amounts and labels only. No personal data, bank data, credentials, or attachments.",
+  "input": {
+    "month_key": "2026-يوليو",
+    "currency": "KWD",
+    "current": {
+      "income": 2400.0,
+      "expense": 1440.0,
+      "net": 960.0,
+      "count": 12
+    },
+    "comparison": {
+      "net_delta": -90.0,
+      "net_delta_pct": -8.571
+    },
+    "coverage": {
+      "expected_income": 0.0,
+      "overdue_commitments": 0.0,
+      "net_coverage": 0.0,
+      "overdue_count": 0,
+      "expected_count": 0
+    },
+    "cash_flow": {
+      "as_of": "2026-07-18",
+      "projected_next_90": {
+        "income": 7200.0,
+        "expense": 6070.0,
+        "net": 1130.0,
+        "count": 18
+      },
+      "carry_over": {
+        "overdue_commitments": 0.0,
+        "overdue_open_invoice_total": 850.0,
+        "overdue_document_fee_total": 0.0
+      }
+    },
+    "savings": {
+      "month_goal": 0.0,
+      "month_net": 0.0
+    },
+    "seasonal": {
+      "status": "high",
+      "current_expense": 1440.0,
+      "average_expense": 1350.0,
+      "delta_from_avg": 90.0
+    },
+    "category_signal": {
+      "status": "high",
+      "top_category": "طلعات وكوفي",
+      "top_category_ar": "طلعات وكوفي",
+      "top_category_en": "Coffee / Outings",
+      "current_amount": 165.0,
+      "avg_amount": 75.0,
+      "delta_pct": 120.0
+    }
+  },
+  "expected": {
+    "decision_ids": [
+      "follow_up_open_items",
+      "reduce_category_spike",
+      "protect_cash_outlook"
+    ],
+    "metric_values": [
+      850.0,
+      90.0,
+      1130.0
+    ]
+  }
+}
