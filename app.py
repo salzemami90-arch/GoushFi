@@ -1222,6 +1222,16 @@ def main():
     if not _is_native_shell_runtime():
         st.sidebar.title("GoushFi")
         sidebar_radio_key = "sidebar_section"
+        pending_sidebar_raw = str(
+            st.session_state.pop("_pending_sidebar_section", "") or ""
+        ).strip()
+        pending_sidebar_section = legacy_map.get(
+            pending_sidebar_raw,
+            pending_sidebar_raw,
+        )
+        if pending_sidebar_section in page_labels:
+            st.session_state[sidebar_radio_key] = pending_sidebar_section
+            st.session_state.current_page = pending_sidebar_section
         sidebar_value = legacy_map.get(
             str(st.session_state.get(sidebar_radio_key, "") or "").strip(),
             str(st.session_state.get(sidebar_radio_key, "") or "").strip(),

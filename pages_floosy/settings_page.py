@@ -1148,6 +1148,10 @@ def render():
                 settings["language"] = selected_language
                 settings["language_user_selected"] = True
                 st.session_state.settings = settings
+                st.session_state["current_page"] = "settings"
+                st.session_state["_pending_sidebar_section"] = "settings"
+                st.session_state["settings_view"] = "profile"
+                st.session_state["_internal_page_navigation"] = True
                 sync_browser_preferences_state(
                     language=selected_language,
                     name=str(settings.get("name", "") or "").strip(),
