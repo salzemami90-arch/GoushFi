@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from services.financial_calm_brief import FinancialCalmBriefEngine
@@ -35,6 +36,20 @@ def test_every_displayed_metric_is_backed_by_a_python_fact():
         assert decision["fact_ids"]
         assert all(fact_id in facts for fact_id in decision["fact_ids"])
         assert decision["metric"]["value"] in {facts[fact_id] for fact_id in decision["fact_ids"]}
+
+
+def test_demo_arabic_copy_is_natural_and_number_free():
+    demo = _demo()
+    brief = FinancialCalmBriefEngine().build(**demo["input"])
+
+    assert [item["title_ar"] for item in brief["decisions"]] == [
+        "ابدئي بالمبالغ المستحقة والمتأخرة",
+        "راجعي مصروف طلعات وكوفي",
+        "حافظي على هامش أمان نقدي",
+    ]
+    for decision in brief["decisions"]:
+        assert not re.search(r"[0-9٠-٩]", decision["fallback_explanation_ar"])
+        assert not re.search(r"[0-9٠-٩]", decision["action_ar"])
 
 
 def test_negative_coverage_gap_is_ranked_ahead_of_general_outlook():

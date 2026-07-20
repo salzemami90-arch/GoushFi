@@ -323,6 +323,8 @@ class AIInsightsService:
             "Copy decision_id exactly, including any technical digits it may contain. "
             "In explanation, do not write digits, number words, amounts, percentages, dates, counts, "
             "currencies, ranges, or new financial facts. Explain only why the supplied decision matters. "
+            "When responding in Arabic, use natural, concise Modern Arabic suitable for Gulf users. "
+            "Avoid literal translation, stiff phrasing, and unnecessary jargon. "
             "Do not add, remove, merge, reorder, or rename decisions.\n\n"
             f"Deterministic brief:\n{json.dumps(sanitized_brief, ensure_ascii=False, default=str)}"
         )

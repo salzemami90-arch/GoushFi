@@ -125,11 +125,11 @@ class FinancialCalmBriefEngine:
                     metric_value=overdue_follow_up,
                     metric_label_ar="مبالغ مفتوحة ومتأخرة",
                     metric_label_en="Open and overdue",
-                    title_ar="تابعي المبالغ المفتوحة أولًا",
+                    title_ar="ابدئي بالمبالغ المستحقة والمتأخرة",
                     title_en="Follow up open amounts first",
-                    fallback_explanation_ar="تحصيل المبالغ المفتوحة أو تسوية المتأخر منها يخفف الضغط قبل الالتزامات القادمة.",
+                    fallback_explanation_ar="البدء بمراجعة المبالغ المستحقة أو المتأخرة يخفف الضغط قبل الالتزامات القادمة.",
                     fallback_explanation_en="Collecting open amounts or settling overdue items reduces pressure before upcoming commitments.",
-                    action_ar="راجعي العناصر المفتوحة وحددي ما سيُحصّل أو يُسدّد أولًا.",
+                    action_ar="راجعي هذه المبالغ وحددي ما ستُحصّلينه أو تسدّدينه أولًا.",
                     action_en="Review open items and choose what to collect or settle first.",
                     fact_ids=["overdue_follow_up"],
                     tone="attention",
@@ -140,7 +140,6 @@ class FinancialCalmBriefEngine:
             category_name = str(category_signal.get("top_category") or "").strip()
             category_name_ar = str(category_signal.get("top_category_ar") or category_name).strip()
             category_name_en = str(category_signal.get("top_category_en") or category_name).strip()
-            title_suffix_ar = f" في {category_name_ar}" if category_name_ar else ""
             title_suffix_en = f" in {category_name_en}" if category_name_en else ""
             candidates.append(
                 self._decision(
@@ -149,11 +148,11 @@ class FinancialCalmBriefEngine:
                     metric_value=category_delta,
                     metric_label_ar="فوق المتوسط",
                     metric_label_en="Above average",
-                    title_ar=f"هدّئي الزيادة{title_suffix_ar}",
+                    title_ar=f"راجعي مصروف {category_name_ar}" if category_name_ar else "راجعي مصروف هذه الفئة",
                     title_en=f"Calm the increase{title_suffix_en}",
-                    fallback_explanation_ar="هذه الفئة أعلى من نمطها السابق، لذلك هي أوضح مكان لتخفيف الصرف بدون تغييرات كبيرة.",
+                    fallback_explanation_ar="مصروف هذه الفئة أعلى من المعتاد، لذلك مراجعته الآن أسهل طريقة لتخفيف الإنفاق من دون تغيير كبير.",
                     fallback_explanation_en="This category is above its earlier pattern, making it the clearest place to ease spending without a major change.",
-                    action_ar="ضعي سقفًا بسيطًا لهذه الفئة حتى نهاية الشهر.",
+                    action_ar="حددي سقفًا واضحًا لهذه الفئة حتى نهاية الشهر.",
                     action_en="Set a simple cap for this category through month end.",
                     fact_ids=["category_current", "category_average", "category_delta"],
                     tone="attention",
@@ -204,19 +203,19 @@ class FinancialCalmBriefEngine:
                 metric_value=projected_net,
                 metric_label_ar="صافي التدفق القادم",
                 metric_label_en="Upcoming cash-flow net",
-                title_ar="احمي هدوء التدفق النقدي",
+                title_ar="حافظي على هامش أمان نقدي",
                 title_en="Protect cash-flow calm",
                 fallback_explanation_ar=(
-                    "التوقع الحالي يحتاج احتياطًا واضحًا قبل إضافة التزامات جديدة."
+                    "التوقعات الحالية تحتاج إلى هامش أمان واضح قبل إضافة التزامات جديدة."
                     if projected_net < 0
-                    else "التوقع الحالي يعطي مساحة، والأفضل حمايتها قبل إضافة التزامات جديدة."
+                    else "التوقعات الحالية مريحة، والحفاظ على هامش أمان قبل أي التزام جديد يدعم الاستقرار."
                 ),
                 fallback_explanation_en=(
                     "The current outlook needs a clear buffer before taking on new commitments."
                     if projected_net < 0
                     else "The current outlook provides room, and protecting it before new commitments is the calmer choice."
                 ),
-                action_ar="ثبتي احتياطًا للتدفق القادم قبل المصاريف الاختيارية.",
+                action_ar="احتفظي باحتياط من التدفق القادم قبل المصاريف الاختيارية.",
                 action_en="Protect a buffer for upcoming cash flow before optional spending.",
                 fact_ids=["projected_net_90d"],
                 tone="risk" if projected_net < 0 else "calm",

@@ -598,10 +598,10 @@ def render(month_key: str, month: str, year: int):
         if not isinstance(stored_ai, dict):
             stored_ai = {}
 
-        st.markdown(f"### {t('ملخص الهدوء المالي', CALM_UI_EN['title'])}")
+        st.markdown(f"### {t('الملخص المالي الهادئ', CALM_UI_EN['title'])}")
         st.caption(
             t(
-                "ثلاثة قرارات فقط. Python يحسب الأرقام، والذكاء الاصطناعي يشرح السبب بدون تغييرها.",
+                "ثلاثة قرارات واضحة فقط. يحسب Python الأرقام، ويشرح الذكاء الاصطناعي سبب كل قرار من دون تغيير أي رقم.",
                 CALM_UI_EN["subtitle"],
             )
         )
@@ -635,14 +635,14 @@ def render(month_key: str, month: str, year: int):
         if stored_ai.get("result") and stored_ai.get("snapshot") != calm_snapshot:
             st.caption(
                 t(
-                    "تغيرت البيانات؛ يظهر الآن الشرح الحتمي المحدث.",
+                    "تغيّرت البيانات؛ لذلك أعدنا عرض الشرح الحتمي المحدّث.",
                     CALM_UI_EN["stale"],
                 )
             )
         elif ai_result and not ai_result.get("ok"):
             st.caption(
                 t(
-                    "لم يجتز رد الذكاء الاصطناعي التحقق؛ تم استخدام الشرح الحتمي الآمن.",
+                    "تعذّر اعتماد شرح الذكاء الاصطناعي؛ لذلك عُرض الشرح الحتمي الآمن.",
                     CALM_UI_EN["rejected"],
                 )
             )
