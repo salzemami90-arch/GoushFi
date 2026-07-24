@@ -1350,6 +1350,173 @@ hr {
     _apply_browser_language_preference()
     _apply_language_direction_theme()
 
+    # --- RTL polish: inject direction-aware CSS when Arabic is active ---
+    _rtl_lang = st.session_state.get("settings", {}).get("language", "العربية")
+    if _rtl_lang != "English":
+        st.markdown(
+            """
+            <style>
+            /* ===== RTL Polish: Arabic layout adjustments ===== */
+
+            /* Main content area direction & alignment */
+            .main .block-container {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Headings: right-align for Arabic */
+            .main h1, .main h2, .main h3,
+            .main [data-testid="stMarkdownContainer"] h1,
+            .main [data-testid="stMarkdownContainer"] h2,
+            .main [data-testid="stMarkdownContainer"] h3 {
+                text-align: right;
+                direction: rtl;
+            }
+
+            /* Paragraphs and captions */
+            .main [data-testid="stMarkdownContainer"] p,
+            .main .stCaption,
+            .main [data-testid="stCaptionContainer"] {
+                text-align: right;
+                direction: rtl;
+            }
+
+            /* Widget labels (above inputs, selects, etc.) */
+            .main label[data-testid="stWidgetLabel"],
+            .main label[data-testid="stWidgetLabel"] p {
+                text-align: right !important;
+                direction: rtl !important;
+                width: 100%;
+            }
+
+            /* Input fields text direction (text only — keep numbers LTR) */
+            .main .stTextInput input,
+            .main .stTextArea textarea {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Number inputs: keep digits LTR to avoid cursor/typing issues,
+               but right-align so they sit on the RTL side. */
+            .main .stNumberInput input {
+                direction: ltr;
+                text-align: right;
+            }
+
+            /* Selectbox / dropdown text alignment */
+            .main .stSelectbox [data-baseweb="select"],
+            .main .stMultiSelect [data-baseweb="select"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Metric cards: right-align labels and values */
+            .main div[data-testid="stMetricLabel"] {
+                direction: rtl;
+                text-align: right;
+            }
+            .main div[data-testid="stMetricValue"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Column layout: reverse order for RTL */
+            .main div[data-testid="stHorizontalBlock"] {
+                direction: rtl;
+            }
+
+            /* Expander summary text */
+            .main div[data-testid="stExpander"] details summary {
+                direction: rtl;
+                text-align: right;
+            }
+            .main div[data-testid="stExpander"] details summary span {
+                direction: rtl;
+            }
+
+            /* Alert / info boxes */
+            .main div[data-testid="stAlert"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Form labels and content */
+            .main div[data-testid="stForm"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Buttons inside columns: keep text readable */
+            .main .stButton button,
+            .main .stDownloadButton button {
+                direction: rtl;
+            }
+
+            /* Radio buttons in sidebar (page navigation) */
+            [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
+                direction: rtl;
+                text-align: right;
+            }
+            [data-testid="stSidebar"] .stRadio label {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Sidebar content alignment */
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+            [data-testid="stSidebar"] .stCaption {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Sidebar subheader */
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+                text-align: right;
+                direction: rtl;
+            }
+
+            /* Sidebar widget labels */
+            [data-testid="stSidebar"] label[data-testid="stWidgetLabel"],
+            [data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
+                text-align: right !important;
+                direction: rtl !important;
+                width: 100%;
+            }
+
+            /* Sidebar selectbox */
+            [data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* File uploader label */
+            .main div[data-testid="stFileUploader"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            /* Checkbox labels */
+            .main .stCheckbox label {
+                direction: rtl;
+            }
+            .main .stCheckbox label span {
+                direction: rtl;
+            }
+
+            /* Data editor / table: keep LTR so column order matches the
+               underlying DataFrame; only the surrounding layout is RTL. */
+            .main div[data-testid="stDataFrame"],
+            .main div[data-testid="stDataEditor"] {
+                direction: ltr;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
     if not isinstance(st.session_state.get("transactions"), dict):
         st.session_state.transactions = {}
 
